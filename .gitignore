@@ -1,0 +1,3 @@
+# TODO: import default python .gitignore from github
+
+**/data/**
