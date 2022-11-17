@@ -2,6 +2,7 @@
 # ## Explore dataset
 #%%
 import pandas as pd
+from datetime import datetime
 from pathlib import Path
 
 # Load Data
@@ -391,7 +392,7 @@ anesthesia_duration.hist(bins=100)
 #%%
 # Possible result values
 labs_df.AIMS_Value_Text.value_counts().to_frame()
-# TODO: The value field is very messy--we need to harmonize this
+
 # 	AIMS_Value_Text
 # None detected	97803
 # Detected	1807
@@ -424,9 +425,19 @@ labs_df.AIMS_Value_Text.value_counts().to_frame()
 #%%
 # Lets clean these values and then get an accurate count
 
+
 def clean_covid_result_value(value: str):
     positive_values = ["Detected", "POSITIVE", "POS", "detected"]
-    negative_values = ["None detected", "NEGATIVE", "NEG", "Negative", "Not detected", "neg", "None Detected", "negative"]
+    negative_values = [
+        "None detected",
+        "NEGATIVE",
+        "NEG",
+        "Negative",
+        "Not detected",
+        "neg",
+        "None Detected",
+        "negative",
+    ]
     unknown_values = [
         "Inconclusive",
         "Duplicate request",
@@ -443,7 +454,7 @@ def clean_covid_result_value(value: str):
         "Wrong test selected by UW laboratory",
         "Reorder requested. No sample received.",
         "Follow-up testing required. Refer to other SARS-CoV-2 Qualitative PCR result on specimen with similar collection date and time.",
-        "Cancel see detail"
+        "Cancel see detail",
     ]
     if value.lower() in [x.lower() for x in positive_values]:
         return "Positive"
@@ -452,19 +463,70 @@ def clean_covid_result_value(value: str):
     elif value.lower() in [x.lower() for x in unknown_values]:
         return "Unknown"
     else:
-        raise ValueError(f"Unknown value {value} encountered that is not handled by clean_covid_result_value() logic.")
+        raise ValueError(
+            f"Unknown value {value} encountered that is not handled by clean_covid_result_value() logic."
+        )
 
-cleaned_covid_result_values = labs_df.AIMS_Value_Text.apply(clean_covid_result_value)
-cleaned_covid_result_values.value_counts()
+
+def format_labs_df(labs_df: pd.DataFrame):
+    # Drop "AIMS_Value_Numeric" and "AIMS_Value_CD" columns because they have no
+    # information and are all `nan` values.
+    # Drop "MPOG_Lab_Concept_ID" and "Lab_Concept_Name" because this table is only
+    # Lab_Concept_Name='Virology - Coronavirus (SARS-CoV-2)', MPOG_Lab_Concept_ID=5179\
+    labs_df = labs_df.drop(
+        columns=[
+            "AIMS_Value_Numeric",
+            "AIMS_Value_CD",
+            "MPOG_Lab_Concept_ID",
+            "Lab_Concept_Name",
+        ]
+    )
+    # Clean COVID result column
+    labs_df.AIMS_Value_Text = labs_df.AIMS_Value_Text.apply(clean_covid_result_value)
+    # Format String date into DateTime object
+    labs_df.AIMS_Lab_Observation_DT = labs_df.AIMS_Lab_Observation_DT.apply(
+        lambda s: datetime.strptime(s, r"%Y-%m-%d %H:%M:%S")
+    )
+    return labs_df
+
+
+df = format_labs_df(labs_df)
+#%%
+# Breakdown of COVID Lab Results
+df.AIMS_Value_Text.value_counts()
 # Negative    97910
 # Positive     1823
 # Unknown       267
 # Name: AIMS_Value_Text, dtype: int64
-
+# %%
+# Number of COVID Lab Results by Month
+df.AIMS_Lab_Observation_DT.apply(lambda dt: dt.month).value_counts().sort_index(
+    ascending=True
+).plot(kind="bar", title="Number of COVID Lab Results by Month")
 
 #%%
-# Get table with each row = patient, each case is a column with value of Case ID & COVID test result
-labs_df.groupby("MPOG_Patient_ID").apply(
-    lambda x: list(zip(x.MPOG_Case_ID, x.AIMS_Value_Text))
-).apply(pd.Series)
+# Number of Positive, Negative, Unknown COVID Lab Results by Month
+results_by_date = df.loc[:, ["AIMS_Lab_Observation_DT", "AIMS_Value_Text"]]
+results_by_date.AIMS_Lab_Observation_DT = results_by_date.AIMS_Lab_Observation_DT.apply(
+    lambda dt: dt.month
+)
+results_by_date.groupby("AIMS_Lab_Observation_DT").value_counts().plot(
+    kind="bar", title="Number of Positive, Negative, Unknown COVID Lab Results by Month"
+)
+#%% Number of Positive, Nevative, Unknown COVID Lab Results by Month
+results_by_date.groupby("AIMS_Lab_Observation_DT").value_counts().unstack(
+    -1
+).rename_axis(index="Month")
+#%% Percent of Positive, Nevative, Unknown COVID Lab Results by Month
+results_by_date.groupby("AIMS_Lab_Observation_DT").value_counts(normalize=True).apply(
+    lambda x: f"{x:.2%}"
+).unstack(-1).rename_axis(index="Month")
+
+# %%
+# Number of Positive COVID Results by Month
+results_by_date.groupby("AIMS_Value_Text").value_counts().unstack(-1).loc[
+    "Positive", :
+].plot(kind="bar", title="Number of Positive COVID Results by Month")
+
+# +COVID tests distribution: 600+ in Jan, 300+ in Feb, and ~100 +COVID test per month for rest of year
 # %%
