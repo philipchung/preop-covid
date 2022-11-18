@@ -218,8 +218,7 @@ num_cases_per_patient
 # 20              1
 # 41              1
 # Name: PatientCount, dtype: int64
-#%%
-num_cases_per_patient.plot()
+num_cases_per_patient.plot(title="Number of Cases per Patient")
 
 #%% [markdown]
 # ## Admission & Mortality Info
@@ -601,7 +600,9 @@ num_covid_tests_per_patient.describe()
 # NOTE: suspicious that one patient has 884 COVID tests in a year.  This is 2-3 COVID tests/day.
 #%%
 # How many patients have more than 100 COVID Tests
-num_covid_tests_per_patient[num_covid_tests_per_patient > 100].plot(kind="bar")
+num_covid_tests_per_patient[num_covid_tests_per_patient > 100].plot(
+    kind="bar", title="Patients with >100 COVID Tests", figsize=(15, 8)
+)
 
 # %%
 num_covid_tests_per_patient[num_covid_tests_per_patient > 100]
@@ -643,9 +644,7 @@ simplified_cases.AnesthesiaStart_Value = simplified_cases.AnesthesiaStart_Value.
 # Join Labs & Cases Info.  Index is CaseID (each row is a Case)
 case_lab_df = labs_per_case_id.join(simplified_cases)
 # Reformat Table to be indexed by LabUUID instead (Each row is a lab test)
-lab_case_df = (
-    case_lab_df.explode("LabUUID").reset_index(drop=False).set_index("LabUUID")
-)
+lab_case_df = case_lab_df.explode("LabUUID").reset_index().set_index("LabUUID")
 # Add in Lab DateTime info
 lab_date_time = df.set_index("LabUUID").AIMS_Lab_Observation_DT
 lab_case_df = lab_case_df.join(lab_date_time)
@@ -687,8 +686,8 @@ len(deduplicated_LabUUIDs)
 #%%
 
 # %% [markdown]
-# ## Time from Last COVID test
-# # TODO: when we decode ICD10 diagnosis, also associate COVID diagnosis as a way of telling of patient has positive COVID
+# ## Get Duration Categories using Last COVID test
+# TODO: when we decode ICD10 diagnosis, also associate COVID diagnosis as a way of telling of patient has positive COVID
 #%%
 ## Associate Positive COVID test with each case
 # Get only Positive COVID labs
@@ -700,23 +699,33 @@ pos_covid_LabUUIDs
 # Filter our Lab-Case associated table by only COVID+ LabUUIDs.  We have durations (AnesthesiaStart - COVID+ PCR DateTime).
 pos_covid_lab_case_df = (
     lab_case_df.loc[pos_covid_LabUUIDs]
-    .reset_index(drop=False)
+    .reset_index()
     .set_index("MPOG_Case_ID")
     .drop_duplicates()
 )
 # Remove Negative Durations (COVID+ test after surgery occurred)
 pos_covid_lab_case_df = pos_covid_lab_case_df.loc[
-    pos_covid_lab_case_df.Duration > datetime.timedelta(0)
+    pos_covid_lab_case_df.Duration > timedelta(0)
 ]
+
+# Get only most recent result for each Surgery Case
+pos_covid_lab_case_df = (
+    pos_covid_lab_case_df.reset_index()
+    .groupby("MPOG_Case_ID")
+    .apply(lambda grp_df: grp_df.sort_values(by="Duration").iloc[0])
+)
+pos_covid_lab_case_df
+# NOTE: we are down to 763 results if we narrow to only most recent COVID+ test per case
+#%%
 # Now Get Statistics on Time interval between COVID+ PCR DateTime and AnesthesiaStart
 pos_covid_lab_case_df.Duration.describe()
-# count                          1122
-# mean     57 days 17:31:14.010695187
-# std      71 days 14:49:00.016285040
+# count                           763
+# mean     54 days 13:58:53.866317169
+# std      73 days 09:55:35.707764318
 # min                 0 days 00:10:00
-# 25%                 8 days 09:13:15
-# 50%                31 days 01:36:00
-# 75%                82 days 16:36:15
+# 25%                 4 days 05:24:30
+# 50%                25 days 20:54:00
+# 75%                71 days 09:19:00
 # max               364 days 17:54:00
 # Name: Duration, dtype: object
 #%%
@@ -724,7 +733,11 @@ pos_covid_lab_case_df.Duration.describe()
 # "Timing of surgery following SARS-CoV-2 infection: an international prospective cohort study"(https://pubmed.ncbi.nlm.nih.gov/33690889/)
 # - in this paper, the categorical buckets are: 0-2 weeks, 3-4 weeks; 5-6 weeks; >7 weeks
 
-from datetime import timedelta
+from pandas.api.types import CategoricalDtype
+
+categorical_type = CategoricalDtype(
+    categories=["0-2_weeks", "3-4_weeks", "5-6_weeks", ">=7_weeks"], ordered=True
+)
 
 
 def categorize_duration(duration: timedelta) -> str:
@@ -740,11 +753,76 @@ def categorize_duration(duration: timedelta) -> str:
 
 pos_covid_lab_case_df["DurationCategory"] = pos_covid_lab_case_df.Duration.apply(
     categorize_duration
+).astype(categorical_type)
+# Num of Cases in each category where we have a confirmed +COVID Test
+pos_covid_lab_case_df.DurationCategory.value_counts().sort_index()
+# 0-2_weeks    345
+# 3-4_weeks     88
+# 5-6_weeks     46
+# >=7_weeks    284
+# Name: DurationCategory, dtype: int64
+
+# %%
+## Now we do the same analysis for CONFIRMED Negative Cases.
+# - when calculate odds ratio, we can either compute odds of COVID+ to all other cases, or for only confirmed neg cases (computed below)
+
+# Get only Negative COVID labs
+neg_covid_labs_df = df.loc[df.AIMS_Value_Text == "Negative"].set_index("LabUUID")
+neg_covid_LabUUIDs = neg_covid_labs_df.index
+
+neg_covid_lab_case_df = (
+    lab_case_df.loc[neg_covid_LabUUIDs]
+    .reset_index()
+    .set_index("MPOG_Case_ID")
+    .drop_duplicates()
 )
-pos_covid_lab_case_df.DurationCategory.value_counts()
-# 0-2_weeks    456
-# >=7_weeks    444
-# 3-4_weeks    140
-# 5-6_weeks     82
+neg_covid_lab_case_df
+
+# Remove Negative Durations (COVID- test after surgery occurred)
+neg_covid_lab_case_df = neg_covid_lab_case_df.loc[
+    neg_covid_lab_case_df.Duration > timedelta(0)
+]
+#%%
+# Get only most recent result for each Surgery Case
+neg_covid_lab_case_df = (
+    neg_covid_lab_case_df.reset_index()
+    .groupby("MPOG_Case_ID")
+    .apply(lambda grp_df: grp_df.sort_values(by="Duration").iloc[0])
+)
+# Now Get Statistics on Time interval between COVID- PCR DateTime and AnesthesiaStart
+neg_covid_lab_case_df.Duration.describe()
+# count                         16454
+# mean      9 days 05:06:36.385073538
+# std      38 days 23:15:54.482088675
+# min                 0 days 00:01:00
+# 25%                 0 days 21:10:15
+# 50%                 1 days 21:33:00
+# 75%                 2 days 18:15:45
+# max               363 days 21:23:00
+# Name: Duration, dtype: object
+#%%
+neg_covid_lab_case_df["DurationCategory"] = neg_covid_lab_case_df.Duration.apply(
+    categorize_duration
+).astype(categorical_type)
+# Num of Cases in each category where we have a confirmed -COVID Test
+neg_covid_lab_case_df.DurationCategory.value_counts().sort_index()
+# 0-2_weeks    15588
+# 3-4_weeks       95
+# 5-6_weeks       73
+# >=7_weeks      698
 # Name: DurationCategory, dtype: int64
 # %%
+
+# NOTE: the above numbers are only approximate.  We didn't check for scenario where a patient could have both COVID+ and COVID- test prior to a surgery case
+len(set(pos_covid_lab_case_df.index).intersection(set(neg_covid_lab_case_df.index)))
+# %%
+# NOTE: When a case is COVID+ (but many weeks ago, they can have a more recent test that is COVID-).
+# our numbers here don't account for this scenario and we look at the absolute numbers here.
+#
+# In the COVIDSurg paper, their comparison group is "No pre-operative SARS-CoV-2" by RT-PCR.
+#
+# Possible Scenarios:
+# - Patient is COVID unknown --> surgery
+# - Patient is COVID neg --> surgery [need to define time interval for this to be meaningful.  Possibly only 0-2 weeks.  Or even more strict like within 3 days.]
+# - Patient is COVID pos --> surgery [time intervals computed above]
+# - Patient is COVID pos, but then COVID neg --> surgery [do we distinguish this group?] . This is not handled in the logic above.
