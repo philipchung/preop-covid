@@ -2,7 +2,8 @@
 # ## Explore dataset
 #%%
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
+import hashlib
 from pathlib import Path
 
 # Load Data
@@ -22,17 +23,19 @@ summary_df = pd.read_csv(summary_path)
 # %%
 # Cohort Info
 print("Cohort Info Shape: ", cohort_df.shape)
-cohort_df
+cohort_df.head()
 #%%
 # Summary Info - Info on the Columns for Cases
 print("Summary Info Shape: ", summary_df.shape)
-summary_df
+summary_df.head()
 # %%
 # Diagnosis Info - List of ICD 10 Diagnosis for CaseID & PatientID
 print("Diagnosis Shape: ", diagnosis_df.shape)
+diagnosis_df.head()
 #%%
 # Labs - List of labs for CaseID & PatientID
 print("Labs Shape: ", labs_df.shape)
+labs_df.head()
 #%%
 # Case Info - Main Dataframe with 84 columns
 print("Case Shape: ", case_df.shape)
@@ -84,6 +87,7 @@ print(f"Case Columns: {'; '.join(case_df.columns)}")
 # ProcedureTypeCardiacAlt_Value; ProcedureTypeCardiacAlt_Value_Code;
 # Race_Value; Race_Value_Code; Sex_Value; Sex_Value_Code; SurgeryDuration_Value;
 # VolatileGasesUsed_Value; VolatileGasesUsed_Value_Code; Weight_Value
+case_df.head()
 #%% [markdown]
 # ## Patient Demographics
 # %%
@@ -384,11 +388,17 @@ anesthesia_duration.describe()
 anesthesia_duration.hist(bins=100)
 # Some cases have way longer anesthesia duration than surgery duration
 
-# %%
+# %% [markdown]
+# ## Diagnosis
 # TODO: figure out how to get COVID19 diagnosis out of diagnosis table.  Which ICD10 code.
 
-#%%
-# TODO: figure out how to join labs table with patient table
+# %%
+# [markdown]
+# ## Vaccine Data
+# TODO: COVID vaccine data for patients?  Where can we get this?
+
+#%% [markdown]
+# ## Explore COVID Labs Table
 #%%
 # Possible result values
 labs_df.AIMS_Value_Text.value_counts().to_frame()
@@ -468,7 +478,43 @@ def clean_covid_result_value(value: str):
         )
 
 
+def create_uuid(data: str, format: str = "T-SQL") -> str:
+    """Creates unique UUID using BLAKE2b algorithm.
+
+    Args:
+        data (str): input data used to generate UUID
+        format (str): Output format.
+            `None` results in raw 32-char digest being returned as UUID.
+            `T-SQL` results in 36-char UUID string (32 hex values, 4 dashes)
+                delimited in the same style as `uniqueidentifier` in T-SQL databases.
+
+    Returns:
+        Formatted UUID.
+    """
+    data = data.encode("UTF-8")
+    digest = hashlib.blake2b(data, digest_size=16).hexdigest()
+    if format is None:
+        return digest
+    elif format == "T-SQL":
+        uuid = (
+            f"{digest[:8]}-{digest[8:12]}-{digest[12:16]}-{digest[16:20]}-{digest[20:]}"
+        )
+        return uuid
+    else:
+        raise ValueError(f"Unknown argument {format} specified for `format`.")
+
+
 def format_labs_df(labs_df: pd.DataFrame):
+    # Create UUID for each Lab Value based on MPOG Patient ID, Lab Concept ID, Lab DateTime.
+    # If there are any duplicated UUIDS, this means the row entry has the same value for all 3 of these.
+    labs_df["LabUUID"] = labs_df.apply(
+        lambda row: create_uuid(
+            row.MPOG_Patient_ID
+            + str(row.MPOG_Lab_Concept_ID)
+            + row.AIMS_Lab_Observation_DT
+        ),
+        axis=1,
+    )
     # Drop "AIMS_Value_Numeric" and "AIMS_Value_CD" columns because they have no
     # information and are all `nan` values.
     # Drop "MPOG_Lab_Concept_ID" and "Lab_Concept_Name" because this table is only
@@ -491,7 +537,7 @@ def format_labs_df(labs_df: pd.DataFrame):
 
 
 df = format_labs_df(labs_df)
-#%%
+
 # Breakdown of COVID Lab Results
 df.AIMS_Value_Text.value_counts()
 # Negative    97910
@@ -529,4 +575,176 @@ results_by_date.groupby("AIMS_Value_Text").value_counts().unstack(-1).loc[
 ].plot(kind="bar", title="Number of Positive COVID Results by Month")
 
 # +COVID tests distribution: 600+ in Jan, 300+ in Feb, and ~100 +COVID test per month for rest of year
+#%%
+
+# %%
+# Get COVID Tests per Patient
+all_labs_per_patient = df.groupby("MPOG_Patient_ID")[
+    ["AIMS_Lab_Observation_DT", "AIMS_Value_Text"]
+].agg(list)
+all_labs_per_patient
+#%%
+# Get Number of COVID Tests per Patient
+num_covid_tests_per_patient = all_labs_per_patient.AIMS_Value_Text.apply(len)
+# Aggregate Statistics on Number of COVID Tests per Patient
+num_covid_tests_per_patient.describe()
+# count    14270.000000
+# mean         7.007708
+# std         23.186766
+# min          1.000000
+# 25%          1.000000
+# 50%          2.000000
+# 75%          5.000000
+# max        884.000000
+# Name: AIMS_Value_Text, dtype: float64
+
+# NOTE: suspicious that one patient has 884 COVID tests in a year.  This is 2-3 COVID tests/day.
+#%%
+# How many patients have more than 100 COVID Tests
+num_covid_tests_per_patient[num_covid_tests_per_patient > 100].plot(kind="bar")
+
+# %%
+num_covid_tests_per_patient[num_covid_tests_per_patient > 100]
+# %%
+# Lets look at a patient who has 884 covid tests in our dataset
+patient_id = "f8a460e6-798a-ec11-8dce-3cecef1ac49f"
+labs_df[labs_df.MPOG_Patient_ID == patient_id].AIMS_Lab_Observation_DT
+# 8992     2022-01-10 19:51:00
+# 8993     2022-01-11 23:53:00
+# 8994     2022-01-15 04:24:00
+# 8995     2022-01-20 16:51:00
+# 8996     2022-01-21 18:12:00
+#                 ...
+# 98571    2022-07-18 20:00:00
+# 98572    2022-07-21 09:30:00
+# 98573    2022-07-28 10:55:00
+# 98574    2022-08-01 13:54:00
+# 98575    2022-08-07 09:33:00
+# Name: AIMS_Lab_Observation_DT, Length: 884, dtype: object
+# %%
+len(labs_df[labs_df.MPOG_Patient_ID == patient_id].AIMS_Lab_Observation_DT.unique())
+# There are only 52 unique lab times here.  Suggesting many labs may be duplicated, and we need to de-duplicate labs.
+
+# %%
+# To de-duplicate all labs per patient, we need to generate a unique UUID for each lab entry,
+# then group labs by patient, then deduplicate labs by time for each patient,
+# then make sure the deduplicated labs have same result.
+# If they have different result, then we may technically have 2 different COVID lab tests taken
+# at same time with different results... which doesn't make sense.
+#%%
+# Look at timing of COVID labs relative to Anesthesia Case
+labs_per_case_id = df.groupby("MPOG_Case_ID")["LabUUID"].agg(list).to_frame()
+simplified_cases = case_df.loc[
+    :, ["MPOG_Case_ID", "AnesthesiaStart_Value", "AnesthesiaDuration_Value"]
+].set_index("MPOG_Case_ID")
+simplified_cases.AnesthesiaStart_Value = simplified_cases.AnesthesiaStart_Value.apply(
+    lambda s: datetime.strptime(s, r"%Y-%m-%d %H:%M:%S")
+)
+# Join Labs & Cases Info.  Index is CaseID (each row is a Case)
+case_lab_df = labs_per_case_id.join(simplified_cases)
+# Reformat Table to be indexed by LabUUID instead (Each row is a lab test)
+lab_case_df = (
+    case_lab_df.explode("LabUUID").reset_index(drop=False).set_index("LabUUID")
+)
+# Add in Lab DateTime info
+lab_date_time = df.set_index("LabUUID").AIMS_Lab_Observation_DT
+lab_case_df = lab_case_df.join(lab_date_time)
+# Get Duration Between Anesthesia Start & Lab Result Time
+lab_case_df["Duration"] = (
+    lab_case_df.AnesthesiaStart_Value - lab_case_df.AIMS_Lab_Observation_DT
+)
+lab_case_df.loc[:, ["MPOG_Case_ID", "Duration"]]
+# LabUUID                               MPOG_Case_ID	                        Duration
+# 00038221-3822-68f9-79d5-a38e2c22e095	ede96310-50c5-ec11-8dd1-3cecef1ac49f	34 days 08:40:00
+# 00039b9f-a75f-bac0-613f-cbbd46b3d7a5	7ebde8d2-9f89-ec11-8dce-3cecef1ac49f	286 days 20:57:00
+# 000452e2-fc08-76f4-72b1-eb016a5b7684	2851de29-e98f-ec11-8dcf-3cecef1ac49f	0 days 02:47:00
+# 000452e2-fc08-76f4-72b1-eb016a5b7684	2851de29-e98f-ec11-8dcf-3cecef1ac49f	0 days 02:47:00
+# 000452e2-fc08-76f4-72b1-eb016a5b7684	2851de29-e98f-ec11-8dcf-3cecef1ac49f	0 days 02:47:00
+# ...	...	...
+# fffd6b56-563f-0a69-7a8b-29552dd998d2	f151de29-e98f-ec11-8dcf-3cecef1ac49f	5 days 05:15:00
+# ffffbac8-9b1d-2ae1-68bc-f05be5da70fb	2d24d0bc-4fba-ec11-8dd0-3cecef1ac49f	358 days 22:37:00
+# ffffbac8-9b1d-2ae1-68bc-f05be5da70fb	2d24d0bc-4fba-ec11-8dd0-3cecef1ac49f	358 days 22:37:00
+# ffffbac8-9b1d-2ae1-68bc-f05be5da70fb	c9abd8ff-449d-ec11-8dcf-3cecef1ac49f	321 days 21:14:00
+# ffffbac8-9b1d-2ae1-68bc-f05be5da70fb	c9abd8ff-449d-ec11-8dcf-3cecef1ac49f	321 days 21:14:00
+
+
+# NOTE: this essentially tells us that the table of labs has duplicates in several ways.
+# - LabUUID depends only on PatientID, Lab Type (e.g COVID PCR Test), and Lab DateTime...
+#   so when we have duplicates for a single MPOG_Case_ID, it means that this is truly a recorded duplicate
+#   value.
+# - Multiple MPOG_Case_IDs have been associated with the same LabUUID since all labs for a patient gets
+#   associated to each case.  If we looked at each specific case & the lab data associated with it,
+#   then it is not truly duplicated in that context.  But this table has all of a patient's cases, so
+#   if a patient has multiple cases, we expect to get duplicates in the table.
+# - Large time Duration (and negative duration values) relative to Anesthesia Start
+#   reinforces the fact that we have all of a patient's labs associated to each Case (both past & future).
+
+# These findings mean that we'll have to be careful about uniquifying labs and joining them to our cases table
+#%%
+deduplicated_LabUUIDs = df.LabUUID.drop_duplicates()
+len(deduplicated_LabUUIDs)
+# NOTE: we started with 100k lab values.  There are only 59540 after we de-duplicate by LabUUID (Patient-LabType-DateTime).
+#%%
+
+# %% [markdown]
+# ## Time from Last COVID test
+# # TODO: when we decode ICD10 diagnosis, also associate COVID diagnosis as a way of telling of patient has positive COVID
+#%%
+## Associate Positive COVID test with each case
+# Get only Positive COVID labs
+pos_covid_labs_df = df.loc[df.AIMS_Value_Text == "Positive"].set_index("LabUUID")
+pos_covid_LabUUIDs = pos_covid_labs_df.index
+pos_covid_LabUUIDs
+# NOTE: there are 1823 positive results in our dataset of 100k COVID tests
+#%%
+# Filter our Lab-Case associated table by only COVID+ LabUUIDs.  We have durations (AnesthesiaStart - COVID+ PCR DateTime).
+pos_covid_lab_case_df = (
+    lab_case_df.loc[pos_covid_LabUUIDs]
+    .reset_index(drop=False)
+    .set_index("MPOG_Case_ID")
+    .drop_duplicates()
+)
+# Remove Negative Durations (COVID+ test after surgery occurred)
+pos_covid_lab_case_df = pos_covid_lab_case_df.loc[
+    pos_covid_lab_case_df.Duration > datetime.timedelta(0)
+]
+# Now Get Statistics on Time interval between COVID+ PCR DateTime and AnesthesiaStart
+pos_covid_lab_case_df.Duration.describe()
+# count                          1122
+# mean     57 days 17:31:14.010695187
+# std      71 days 14:49:00.016285040
+# min                 0 days 00:10:00
+# 25%                 8 days 09:13:15
+# 50%                31 days 01:36:00
+# 75%                82 days 16:36:15
+# max               364 days 17:54:00
+# Name: Duration, dtype: object
+#%%
+# Now we can create buckets of duration similar to how COVIDSurg 2021 paper did it
+# "Timing of surgery following SARS-CoV-2 infection: an international prospective cohort study"(https://pubmed.ncbi.nlm.nih.gov/33690889/)
+# - in this paper, the categorical buckets are: 0-2 weeks, 3-4 weeks; 5-6 weeks; >7 weeks
+
+from datetime import timedelta
+
+
+def categorize_duration(duration: timedelta) -> str:
+    if duration < timedelta(weeks=3):
+        return "0-2_weeks"
+    elif duration >= timedelta(weeks=3) and duration < timedelta(weeks=5):
+        return "3-4_weeks"
+    elif duration >= timedelta(weeks=5) and duration < timedelta(weeks=7):
+        return "5-6_weeks"
+    else:
+        return ">=7_weeks"
+
+
+pos_covid_lab_case_df["DurationCategory"] = pos_covid_lab_case_df.Duration.apply(
+    categorize_duration
+)
+pos_covid_lab_case_df.DurationCategory.value_counts()
+# 0-2_weeks    456
+# >=7_weeks    444
+# 3-4_weeks    140
+# 5-6_weeks     82
+# Name: DurationCategory, dtype: int64
 # %%
