@@ -296,7 +296,7 @@ upper_outliers = df.PacuDuration_Value.loc[df.PacuDuration_Value > upper_bound]
 pacu_duration = df.PacuDuration_Value.loc[
     (df.PacuDuration_Value > lower_bound) & (df.PacuDuration_Value < upper_bound)
 ]
-pacu_duration.hist(bins=100)
+pacu_duration.plot(kind="hist", bins=100, title="Histogram of PACU Duration")
 #%%
 # Statistics on PACU Length of Stay
 pacu_duration.describe()
@@ -334,14 +334,18 @@ df.PostopLengthOfStayDays_Value.describe()
 
 #%%
 # Visualize as Histogram
-df.PostopLengthOfStayDays_Value.hist(bins=100)
+df.PostopLengthOfStayDays_Value.plot(
+    kind="hist", bins=100, title="Histogram of Post-op Length of Stay Days"
+)
 #%%
 ## Long tail, so let's truncate data to <30 days
 upper_bound = 30
 df_less_than_30 = df.PostopLengthOfStayDays_Value[
     df.PostopLengthOfStayDays_Value < upper_bound
 ]
-df_less_than_30.hist(bins=100)
+df_less_than_30.plot(
+    kind="hist", bins=100, title="Histogram of Post-op Length of Stay Days"
+)
 #%%
 # Surgery Duration
 # Many surgeries don't have recorded durtion (~20%)
@@ -365,7 +369,7 @@ surgery_duration.describe()
 # max        969.000000
 # Name: SurgeryDuration_Value, dtype: float64
 #%%
-surgery_duration.hist(bins=100)
+surgery_duration.plot(kind="hist", bins=100, title="Histogram of Surgery Duration")
 #%%
 # Statistics on Anesthesia Duration
 lower_bound = 0
@@ -384,7 +388,9 @@ anesthesia_duration.describe()
 # max       2125.000000
 # Name: AnesthesiaDuration_Value, dtype: float64
 #%%
-anesthesia_duration.hist(bins=100)
+anesthesia_duration.plot(
+    kind="hist", bins=100, title="Histogram of Anesthesia Duration"
+)
 # Some cases have way longer anesthesia duration than surgery duration
 
 # %% [markdown]
@@ -819,8 +825,9 @@ len(set(pos_covid_lab_case_df.index).intersection(set(neg_covid_lab_case_df.inde
 # NOTE: When a case is COVID+ (but many weeks ago, they can have a more recent test that is COVID-).
 # our numbers here don't account for this scenario and we look at the absolute numbers here.
 #
-# In the COVIDSurg paper, their comparison group is "No pre-operative SARS-CoV-2" by RT-PCR.
+# In the COVIDSurg paper, their comparison group is "No pre-operative SARS-CoV-2" by RT-PCR. (this is all patients who are COVID unknown + negative)
 #
+# We may be able to do better...
 # Possible Scenarios:
 # - Patient is COVID unknown --> surgery
 # - Patient is COVID neg --> surgery [need to define time interval for this to be meaningful.  Possibly only 0-2 weeks.  Or even more strict like within 3 days.]
