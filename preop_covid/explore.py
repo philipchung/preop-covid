@@ -1,10 +1,12 @@
 #%% [markdown]
 # ## Explore dataset
 #%%
-import pandas as pd
-from datetime import datetime, timedelta
 import hashlib
+from datetime import datetime, timedelta
 from pathlib import Path
+
+import pandas as pd
+from pandas.api.types import CategoricalDtype
 
 # Load Data
 project_dir = Path("/Users/chungph/Developer/preop-covid")
@@ -185,9 +187,7 @@ len(df.MPOG_Case_ID.unique())
 df = df.loc[:, ["MPOG_Patient_ID", "MPOG_Case_ID"]]
 num_cases_per_patient = df.groupby("MPOG_Patient_ID").count()
 num_cases_per_patient = (
-    num_cases_per_patient.value_counts()
-    .rename("PatientCount")
-    .rename_axis(index="NumCases")
+    num_cases_per_patient.value_counts().rename("PatientCount").rename_axis(index="NumCases")
 )
 num_cases_per_patient
 # NumCases
@@ -242,7 +242,8 @@ df.Institution_Name.value_counts()
 # University of Washington Medical Center - IM    37230
 # Name: Institution_Name, dtype: int64
 
-# NOTE: even though data from 3 hospitals, they are all grouped under same institution--separate field for hospital name?
+# NOTE: even though data from 3 hospitals, they are all grouped under same institution
+# --separate field for hospital name?
 
 # %%
 df.AdmissionType_Value.value_counts()
@@ -340,12 +341,8 @@ df.PostopLengthOfStayDays_Value.plot(
 #%%
 ## Long tail, so let's truncate data to <30 days
 upper_bound = 30
-df_less_than_30 = df.PostopLengthOfStayDays_Value[
-    df.PostopLengthOfStayDays_Value < upper_bound
-]
-df_less_than_30.plot(
-    kind="hist", bins=100, title="Histogram of Post-op Length of Stay Days"
-)
+df_less_than_30 = df.PostopLengthOfStayDays_Value[df.PostopLengthOfStayDays_Value < upper_bound]
+df_less_than_30.plot(kind="hist", bins=100, title="Histogram of Post-op Length of Stay Days")
 #%%
 # Surgery Duration
 # Many surgeries don't have recorded durtion (~20%)
@@ -374,9 +371,7 @@ surgery_duration.plot(kind="hist", bins=100, title="Histogram of Surgery Duratio
 # Statistics on Anesthesia Duration
 lower_bound = 0
 anesthesia_duration = df.AnesthesiaDuration_Value[df.AnesthesiaDuration_Value.notna()]
-anesthesia_duration = df.AnesthesiaDuration_Value[
-    df.AnesthesiaDuration_Value > lower_bound
-]
+anesthesia_duration = df.AnesthesiaDuration_Value[df.AnesthesiaDuration_Value > lower_bound]
 anesthesia_duration.describe()
 # count    37230.000000
 # mean       180.162772
@@ -388,9 +383,7 @@ anesthesia_duration.describe()
 # max       2125.000000
 # Name: AnesthesiaDuration_Value, dtype: float64
 #%%
-anesthesia_duration.plot(
-    kind="hist", bins=100, title="Histogram of Anesthesia Duration"
-)
+anesthesia_duration.plot(kind="hist", bins=100, title="Histogram of Anesthesia Duration")
 # Some cases have way longer anesthesia duration than surgery duration
 
 # %% [markdown]
@@ -431,7 +424,7 @@ labs_df.AIMS_Value_Text.value_counts().to_frame()
 # Wrong test selected by UW laboratory	2
 # neg	2
 # Reorder requested. No sample received.	1
-# Follow-up testing required. Refer to other SARS-CoV-2 Qualitative PCR result on specimen with similar collection date and time.	1
+# Follow-up testing required. Refer to other SARS-CoV-2 Qualitative PCR result on specimen with similar collection date and time.	1       # noqa:E501
 # POS	1
 # detected	1
 # Cancel see detail	1
@@ -468,7 +461,7 @@ def clean_covid_result_value(value: str):
         "Reorder requested sample problem",
         "Wrong test selected by UW laboratory",
         "Reorder requested. No sample received.",
-        "Follow-up testing required. Refer to other SARS-CoV-2 Qualitative PCR result on specimen with similar collection date and time.",
+        "Follow-up testing required. Refer to other SARS-CoV-2 Qualitative PCR result on specimen with similar collection date and time.",  # noqa:E501
         "Cancel see detail",
     ]
     if value.lower() in [x.lower() for x in positive_values]:
@@ -501,9 +494,7 @@ def create_uuid(data: str, format: str = "T-SQL") -> str:
     if format is None:
         return digest
     elif format == "T-SQL":
-        uuid = (
-            f"{digest[:8]}-{digest[8:12]}-{digest[12:16]}-{digest[16:20]}-{digest[20:]}"
-        )
+        uuid = f"{digest[:8]}-{digest[8:12]}-{digest[12:16]}-{digest[16:20]}-{digest[20:]}"
         return uuid
     else:
         raise ValueError(f"Unknown argument {format} specified for `format`.")
@@ -514,9 +505,7 @@ def format_labs_df(labs_df: pd.DataFrame):
     # If there are any duplicated UUIDS, this means the row entry has the same value for all 3 of these.
     labs_df["LabUUID"] = labs_df.apply(
         lambda row: create_uuid(
-            row.MPOG_Patient_ID
-            + str(row.MPOG_Lab_Concept_ID)
-            + row.AIMS_Lab_Observation_DT
+            row.MPOG_Patient_ID + str(row.MPOG_Lab_Concept_ID) + row.AIMS_Lab_Observation_DT
         ),
         axis=1,
     )
@@ -565,9 +554,9 @@ results_by_date.groupby("AIMS_Lab_Observation_DT").value_counts().plot(
     kind="bar", title="Number of Positive, Negative, Unknown COVID Lab Results by Month"
 )
 #%% Number of Positive, Nevative, Unknown COVID Lab Results by Month
-results_by_date.groupby("AIMS_Lab_Observation_DT").value_counts().unstack(
-    -1
-).rename_axis(index="Month")
+results_by_date.groupby("AIMS_Lab_Observation_DT").value_counts().unstack(-1).rename_axis(
+    index="Month"
+)
 #%% Percent of Positive, Nevative, Unknown COVID Lab Results by Month
 results_by_date.groupby("AIMS_Lab_Observation_DT").value_counts(normalize=True).apply(
     lambda x: f"{x:.2%}"
@@ -575,9 +564,9 @@ results_by_date.groupby("AIMS_Lab_Observation_DT").value_counts(normalize=True).
 
 # %%
 # Number of Positive COVID Results by Month
-results_by_date.groupby("AIMS_Value_Text").value_counts().unstack(-1).loc[
-    "Positive", :
-].plot(kind="bar", title="Number of Positive COVID Results by Month")
+results_by_date.groupby("AIMS_Value_Text").value_counts().unstack(-1).loc["Positive", :].plot(
+    kind="bar", title="Number of Positive COVID Results by Month"
+)
 
 # +COVID tests distribution: 600+ in Jan, 300+ in Feb, and ~100 +COVID test per month for rest of year
 #%%
@@ -655,9 +644,7 @@ lab_case_df = case_lab_df.explode("LabUUID").reset_index().set_index("LabUUID")
 lab_date_time = df.set_index("LabUUID").AIMS_Lab_Observation_DT
 lab_case_df = lab_case_df.join(lab_date_time)
 # Get Duration Between Anesthesia Start & Lab Result Time
-lab_case_df["Duration"] = (
-    lab_case_df.AnesthesiaStart_Value - lab_case_df.AIMS_Lab_Observation_DT
-)
+lab_case_df["Duration"] = lab_case_df.AnesthesiaStart_Value - lab_case_df.AIMS_Lab_Observation_DT
 lab_case_df.loc[:, ["MPOG_Case_ID", "Duration"]]
 # LabUUID                               MPOG_Case_ID	                        Duration
 # 00038221-3822-68f9-79d5-a38e2c22e095	ede96310-50c5-ec11-8dd1-3cecef1ac49f	34 days 08:40:00
@@ -688,7 +675,8 @@ lab_case_df.loc[:, ["MPOG_Case_ID", "Duration"]]
 #%%
 deduplicated_LabUUIDs = df.LabUUID.drop_duplicates()
 len(deduplicated_LabUUIDs)
-# NOTE: we started with 100k lab values.  There are only 59540 after we de-duplicate by LabUUID (Patient-LabType-DateTime).
+# NOTE: we started with 100k lab values.  There are only 59540 after we de-duplicate
+# by LabUUID (Patient-LabType-DateTime).
 #%%
 
 # %% [markdown]
@@ -702,17 +690,13 @@ pos_covid_LabUUIDs = pos_covid_labs_df.index
 pos_covid_LabUUIDs
 # NOTE: there are 1823 positive results in our dataset of 100k COVID tests
 #%%
-# Filter our Lab-Case associated table by only COVID+ LabUUIDs.  We have durations (AnesthesiaStart - COVID+ PCR DateTime).
+# Filter our Lab-Case associated table by only COVID+ LabUUIDs.
+# We have durations (AnesthesiaStart - COVID+ PCR DateTime).
 pos_covid_lab_case_df = (
-    lab_case_df.loc[pos_covid_LabUUIDs]
-    .reset_index()
-    .set_index("MPOG_Case_ID")
-    .drop_duplicates()
+    lab_case_df.loc[pos_covid_LabUUIDs].reset_index().set_index("MPOG_Case_ID").drop_duplicates()
 )
 # Remove Negative Durations (COVID+ test after surgery occurred)
-pos_covid_lab_case_df = pos_covid_lab_case_df.loc[
-    pos_covid_lab_case_df.Duration > timedelta(0)
-]
+pos_covid_lab_case_df = pos_covid_lab_case_df.loc[pos_covid_lab_case_df.Duration > timedelta(0)]
 
 # Get only most recent result for each Surgery Case
 pos_covid_lab_case_df = (
@@ -736,10 +720,9 @@ pos_covid_lab_case_df.Duration.describe()
 # Name: Duration, dtype: object
 #%%
 # Now we can create buckets of duration similar to how COVIDSurg 2021 paper did it
-# "Timing of surgery following SARS-CoV-2 infection: an international prospective cohort study"(https://pubmed.ncbi.nlm.nih.gov/33690889/)
+# "Timing of surgery following SARS-CoV-2 infection: an international prospective cohort study"
+# (https://pubmed.ncbi.nlm.nih.gov/33690889/)
 # - in this paper, the categorical buckets are: 0-2 weeks, 3-4 weeks; 5-6 weeks; >7 weeks
-
-from pandas.api.types import CategoricalDtype
 
 categorical_type = CategoricalDtype(
     categories=["0-2_weeks", "3-4_weeks", "5-6_weeks", ">=7_weeks"], ordered=True
@@ -770,24 +753,20 @@ pos_covid_lab_case_df.DurationCategory.value_counts().sort_index()
 
 # %%
 ## Now we do the same analysis for CONFIRMED Negative Cases.
-# - when calculate odds ratio, we can either compute odds of COVID+ to all other cases, or for only confirmed neg cases (computed below)
+# - when calculate odds ratio, we can either compute odds of COVID+ to all other cases,
+# or for only confirmed neg cases (computed below)
 
 # Get only Negative COVID labs
 neg_covid_labs_df = df.loc[df.AIMS_Value_Text == "Negative"].set_index("LabUUID")
 neg_covid_LabUUIDs = neg_covid_labs_df.index
 
 neg_covid_lab_case_df = (
-    lab_case_df.loc[neg_covid_LabUUIDs]
-    .reset_index()
-    .set_index("MPOG_Case_ID")
-    .drop_duplicates()
+    lab_case_df.loc[neg_covid_LabUUIDs].reset_index().set_index("MPOG_Case_ID").drop_duplicates()
 )
 neg_covid_lab_case_df
 
 # Remove Negative Durations (COVID- test after surgery occurred)
-neg_covid_lab_case_df = neg_covid_lab_case_df.loc[
-    neg_covid_lab_case_df.Duration > timedelta(0)
-]
+neg_covid_lab_case_df = neg_covid_lab_case_df.loc[neg_covid_lab_case_df.Duration > timedelta(0)]
 #%%
 # Get only most recent result for each Surgery Case
 neg_covid_lab_case_df = (
@@ -819,17 +798,21 @@ neg_covid_lab_case_df.DurationCategory.value_counts().sort_index()
 # Name: DurationCategory, dtype: int64
 # %%
 
-# NOTE: the above numbers are only approximate.  We didn't check for scenario where a patient could have both COVID+ and COVID- test prior to a surgery case
+# NOTE: the above numbers are only approximate.  We didn't check for scenario where a patient
+# could have both COVID+ and COVID- test prior to a surgery case
 len(set(pos_covid_lab_case_df.index).intersection(set(neg_covid_lab_case_df.index)))
 # %%
 # NOTE: When a case is COVID+ (but many weeks ago, they can have a more recent test that is COVID-).
 # our numbers here don't account for this scenario and we look at the absolute numbers here.
 #
-# In the COVIDSurg paper, their comparison group is "No pre-operative SARS-CoV-2" by RT-PCR. (this is all patients who are COVID unknown + negative)
+# In the COVIDSurg paper, their comparison group is "No pre-operative SARS-CoV-2" by RT-PCR.
+# (this is all patients who are COVID unknown + negative)
 #
 # We may be able to do better...
 # Possible Scenarios:
 # - Patient is COVID unknown --> surgery
-# - Patient is COVID neg --> surgery [need to define time interval for this to be meaningful.  Possibly only 0-2 weeks.  Or even more strict like within 3 days.]
+# - Patient is COVID neg --> surgery [need to define time interval for this to be meaningful.
+#   Possibly only 0-2 weeks.  Or even more strict like within 3 days.]
 # - Patient is COVID pos --> surgery [time intervals computed above]
-# - Patient is COVID pos, but then COVID neg --> surgery [do we distinguish this group?] . This is not handled in the logic above.
+# - Patient is COVID pos, but then COVID neg --> surgery [do we distinguish this group?] . This is not handled
+#       in the logic above.

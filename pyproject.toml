@@ -11,11 +11,20 @@ python = "^3.10"
 pip = "^22.3.1"
 pandas = "^1.5.1"
 jupyter = "^1.0.0"
-black = "^22.10.0"
-flake8 = "^5.0.4"
 matplotlib = "^3.6.2"
 
+[tool.poetry.group.dev.dependencies]
+black = "^22.10.0"
+flake8 = "^5.0.4"
+mypy = "^0.991"
+isort = "^5.11.4"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+
+[tool.isort]
+profile = "black"
