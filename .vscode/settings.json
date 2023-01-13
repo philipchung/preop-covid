@@ -15,5 +15,6 @@
     "editor.rulers": [
         88,
         120
-    ]
+    ],
+    "python.linting.mypyEnabled": true,
 }
