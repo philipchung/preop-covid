@@ -25,8 +25,31 @@ class CaseData:
     admission_type_category = CategoricalDtype(
         categories=["Inpatient", "Observation", "Outpatient", "Unknown"], ordered=False
     )
-    covid_case_interval_category = CategoricalDtype(
-        categories=["0-2_weeks", "3-4_weeks", "5-6_weeks", ">=7_weeks"], ordered=True
+    covid_case_interval_category: CategoricalDtype = CategoricalDtype(
+        categories=[
+            "0-1_Weeks",
+            "1-2_Weeks",
+            "2-3_Weeks",
+            "3-4_Weeks",
+            "4-5_Weeks",
+            "5-6_Weeks",
+            "6-7_Weeks",
+            "7-8_Weeks",
+            ">=8_Weeks",
+            "Never",
+        ],
+        ordered=True,
+    )
+    covid_case_interval_category2: CategoricalDtype = CategoricalDtype(
+        categories=[
+            "0-2_Weeks",
+            "2-4_Weeks",
+            "4-6_Weeks",
+            "6-8_Weeks",
+            ">=8_Weeks",
+            "Never",
+        ],
+        ordered=True,
     )
 
     def __post_init__(self) -> pd.DataFrame:
@@ -136,8 +159,9 @@ class CaseData:
             output_df.PACU_Duration < timedelta(hours=20), :
         ]
 
-        # Drop Unknown Admission Types
-        output_df = output_df.loc[output_df.AdmissionType != "Unknown"]
+        # # Drop Unknown Admission Types
+        # output_df = output_df.loc[output_df.AdmissionType != "Unknown"]
+
         return output_df
 
     def associate_labs_to_cases(
@@ -156,7 +180,12 @@ class CaseData:
             # Load cached result from disk
             self.case_lab_association_df = read_pandas(
                 self.processed_case_lab_association_path
-            ).astype({"LastPositivePreopCovidIntervalCategory": self.covid_case_interval_category})
+            ).astype(
+                {
+                    "LabCaseIntervalCategory": self.covid_case_interval_category,
+                    "LabCaseIntervalCategory2": self.covid_case_interval_category2,
+                }
+            )
         except FileNotFoundError:
             if not isinstance(labs_df, pd.DataFrame):
                 raise ValueError("Must provide argument `labs_df`.")
@@ -180,9 +209,7 @@ class CaseData:
                 # Accumulate for all patients and cases
                 processed_labs_for_all_cases += [processed_labs_for_cases]
 
-            self.case_lab_association_df = pd.concat(processed_labs_for_all_cases).astype(
-                {"LastPositivePreopCovidIntervalCategory": self.covid_case_interval_category}
-            )
+            self.case_lab_association_df = pd.concat(processed_labs_for_all_cases)
             # Cache result on disk
             self.case_lab_association_df.to_parquet(self.processed_case_lab_association_path)
 
@@ -195,6 +222,8 @@ class CaseData:
         'Timing of surgery following SARS-CoV-2 infection: an international prospective cohort study'
         (https://pubmed.ncbi.nlm.nih.gov/33690889/)
 
+        Create 1-week intervals.
+
         Args:
             duration (timedelta): duration of time used to create category/bin.
 
@@ -202,16 +231,53 @@ class CaseData:
             str: String description of category of covid case interval.
                 For time durations of 0 and negative, None is returned.
         """
-        if duration <= timedelta(seconds=0):
-            return None
-        elif duration < timedelta(weeks=3):
-            return "0-2_weeks"
-        elif duration >= timedelta(weeks=3) and duration < timedelta(weeks=5):
-            return "3-4_weeks"
-        elif duration >= timedelta(weeks=5) and duration < timedelta(weeks=7):
-            return "5-6_weeks"
+        if duration in (pd.NaT, np.nan, None) or duration < timedelta(seconds=0):
+            return "Never"
+        elif duration >= timedelta(seconds=0) and duration < timedelta(weeks=1):
+            return "0-1_Weeks"
+        elif duration >= timedelta(weeks=1) and duration < timedelta(weeks=2):
+            return "1-2_Weeks"
+        elif duration >= timedelta(weeks=2) and duration < timedelta(weeks=3):
+            return "2-3_Weeks"
+        elif duration >= timedelta(weeks=3) and duration < timedelta(weeks=4):
+            return "3-4_Weeks"
+        elif duration >= timedelta(weeks=4) and duration < timedelta(weeks=5):
+            return "4-5_Weeks"
+        elif duration >= timedelta(weeks=5) and duration < timedelta(weeks=6):
+            return "5-6_Weeks"
+        elif duration >= timedelta(weeks=6) and duration < timedelta(weeks=7):
+            return "6-7_Weeks"
+        elif duration >= timedelta(weeks=7) and duration < timedelta(weeks=8):
+            return "7-8_Weeks"
         else:
-            return ">=7_weeks"
+            return ">=8_Weeks"
+
+    def categorize_duration2(self, duration: timedelta) -> str | None:
+        """Creates buckets of duration similar to how COVIDSurg 2021 paper did it.
+        'Timing of surgery following SARS-CoV-2 infection: an international prospective cohort study'
+        (https://pubmed.ncbi.nlm.nih.gov/33690889/)
+
+        Creates 2-week intervals.
+
+        Args:
+            duration (timedelta): duration of time used to create category/bin.
+
+        Returns:
+            str: String description of category of covid case interval.
+                For time durations of 0 and negative, None is returned.
+        """
+        if duration in (pd.NaT, np.nan, None) or duration < timedelta(seconds=0):
+            return "Never"
+        elif duration >= timedelta(seconds=0) and duration < timedelta(weeks=2):
+            return "0-2_Weeks"
+        elif duration >= timedelta(weeks=2) and duration < timedelta(weeks=4):
+            return "2-4_Weeks"
+        elif duration >= timedelta(weeks=4) and duration < timedelta(weeks=6):
+            return "4-6_Weeks"
+        elif duration >= timedelta(weeks=6) and duration < timedelta(weeks=8):
+            return "6-8_Weeks"
+        else:
+            return ">=8_Weeks"
 
     def last_covid_lab_before_case(
         self, labs_df: pd.DataFrame, mpog_patient_id: str, case_start: pd.Timestamp | datetime
@@ -226,46 +292,51 @@ class CaseData:
 
         Returns:
             dict[str, Any]: dictionary of most recent covid result as well as whether patient
-                had positive covid result lab test in the stratified time intervals:
-                0-2 weeks, 3-4 weeks, 5-6 weeks, >7 weeks.
+                had positive covid result lab test in the stratified time intervals.
         """
         labs = labs_df.loc[labs_df.MPOG_Patient_ID == mpog_patient_id, :].sort_values(
             by="DateTime", ascending=True
         )
         # Create Timedelta objects for duration interval between lab and case
-        labs["LabCaseInterval"] = case_start - labs.DateTime
-        labs["LabCaseIntervalCategory"] = (
-            labs["LabCaseInterval"]
-            .apply(self.categorize_duration)
-            .astype(self.covid_case_interval_category)
+        lab_case_interval = case_start - labs.DateTime
+        lab_case_interval_category = lab_case_interval.apply(self.categorize_duration).astype(
+            self.covid_case_interval_category
+        )
+        lab_case_interval_category2 = lab_case_interval.apply(self.categorize_duration2).astype(
+            self.covid_case_interval_category2
         )
         # Get Only Pre-op Labs Prior to Case
-        labs["PreopLab"] = labs.DateTime < case_start
-        preop_labs = labs.loc[labs.PreopLab, :]
+        labs["IsPreopLab"] = labs.DateTime < case_start
+        preop_labs = labs.loc[labs.IsPreopLab, :]
         # Get Only Positive Pre-op Labs Prior to Case
-        pos_preop_labs = preop_labs.loc[preop_labs.Result == "Positive"]
-        has_positive_preop_covid_test = not pos_preop_labs.empty
+        positive_preop_labs = preop_labs.loc[preop_labs.Result == "Positive"]
+        has_positive_preop_covid_test = not positive_preop_labs.empty
         if has_positive_preop_covid_test:
-            last_positive_preop_covid_test = pos_preop_labs.tail(n=1)
+            last_positive_preop_covid_test = positive_preop_labs.tail(n=1)
             last_positive_preop_covid_labuuid = last_positive_preop_covid_test.index.item()
             last_positive_preop_covid_datetime = last_positive_preop_covid_test.DateTime.item()
-            last_positive_preop_covid_interval = (
-                last_positive_preop_covid_test.LabCaseInterval.item()
-            )
-            last_positive_preop_covid_interval_category = (
-                last_positive_preop_covid_test.LabCaseIntervalCategory.item()
-            )
+            last_positive_preop_covid_interval = lab_case_interval.loc[
+                last_positive_preop_covid_labuuid
+            ]
+            last_positive_preop_covid_interval_category = lab_case_interval_category.loc[
+                last_positive_preop_covid_labuuid
+            ]
+            last_positive_preop_covid_interval_category2 = lab_case_interval_category2.loc[
+                last_positive_preop_covid_labuuid
+            ]
         else:
             last_positive_preop_covid_labuuid = None
-            last_positive_preop_covid_datetime = None
-            last_positive_preop_covid_interval = None
-            last_positive_preop_covid_interval_category = None
+            last_positive_preop_covid_datetime = pd.NaT
+            last_positive_preop_covid_interval = pd.NaT
+            last_positive_preop_covid_interval_category = "Never"
+            last_positive_preop_covid_interval_category2 = "Never"
 
         return {
             "EverCovidPositive": any(preop_labs.Result == "Positive"),
             "HasPositivePreopCovidTest": has_positive_preop_covid_test,
-            "LastPositivePreopCovidLabUUID": last_positive_preop_covid_labuuid,
-            "LastPositivePreopCovidDateTime": last_positive_preop_covid_datetime,
-            "LastPositivePreopCovidInterval": last_positive_preop_covid_interval,
-            "LastPositivePreopCovidIntervalCategory": last_positive_preop_covid_interval_category,
+            "LastPositiveCovidLabUUID": last_positive_preop_covid_labuuid,
+            "LastPositiveCovidDateTime": last_positive_preop_covid_datetime,
+            "LastPositiveCovidInterval": last_positive_preop_covid_interval,
+            "LabCaseIntervalCategory": last_positive_preop_covid_interval_category,
+            "LabCaseIntervalCategory2": last_positive_preop_covid_interval_category2,
         }
