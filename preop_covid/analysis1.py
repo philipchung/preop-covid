@@ -10,20 +10,23 @@ import matplotlib
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from lab_data import LabData
 from matplotlib import pyplot as plt
 from pandas.api.types import CategoricalDtype
-from tqdm.auto import tqdm
-from utils import clean_covid_result_value, create_uuid
+from tqdm.autonotebook import tqdm
 
-# Load Data
+# Define data paths and directories
 project_dir = Path("/Users/chungph/Developer/preop-covid")
 data_dir = project_dir / "data"
-cohort_details_path = data_dir / "raw/v1/Cohort Details_9602.csv"
-diagnosis_path = data_dir / "raw/v1/Results_DiagnosesCleanedAggregated_9602.csv"
-labs_path = data_dir / "raw/v1/Results_Laboratories_9602.csv"
-cases_path = data_dir / "raw/v1/Results_Main_Case_9602.csv"
-summary_path = data_dir / "raw/v1/Summary_9602.csv"
-
+raw_dir = data_dir / "v1" / "raw"
+processed_dir = data_dir / "v1" / "processed"
+[path.mkdir(parents=True, exist_ok=True) for path in (raw_dir, processed_dir)]  # type: ignore
+cohort_details_path = raw_dir / "Cohort Details_9602.csv"
+diagnosis_path = raw_dir / "Results_DiagnosesCleanedAggregated_9602.csv"
+labs_path = raw_dir / "Results_Laboratories_9602.csv"
+cases_path = raw_dir / "Results_Main_Case_9602.csv"
+summary_path = raw_dir / "Summary_9602.csv"
+# Load Data
 raw_cohort_df = pd.read_csv(cohort_details_path)
 raw_diagnosis_df = pd.read_csv(diagnosis_path)
 raw_labs_df = pd.read_csv(labs_path)
@@ -31,63 +34,20 @@ raw_cases_df = pd.read_csv(cases_path)
 raw_summary_df = pd.read_csv(summary_path)
 
 # %%
-covid_lab_result = CategoricalDtype(categories=["Negative", "Positive", "Unknown"], ordered=False)
+
+
+lab_data = LabData(labs_df=labs_path)
+labs_df = lab_data.labs_df
+#%%
+#%%
+#%%
+
+admission_type_category = CategoricalDtype(
+    categories=["Inpatient", "Observation", "Outpatient", "Unknown"], ordered=False
+)
 covid_case_interval_category = CategoricalDtype(
     categories=["0-2_weeks", "3-4_weeks", "5-6_weeks", ">=7_weeks"], ordered=True
 )
-
-
-def format_labs_df(labs_df: pd.DataFrame) -> pd.DataFrame:
-    """Clean labs dataframe.  This returns a new dataframe with different column values.
-    Generates a UUID for each lab value, which is unique as long as we have unique
-    MPOG Patient ID, Lab Concept ID, and Lab Observation DateTime.  Then we uniquify lab
-    values based on this UUID and use it as an index.
-
-    Args:
-        labs_df (pd.DataFrame): raw labs dataframe
-
-    Returns:
-        pd.DataFrame: transformed output dataframe
-    """
-    # Create UUID for each Lab Value based on MPOG Patient ID, Lab Concept ID, Lab DateTime.
-    # If there are any duplicated UUIDS, this means the row entry has the same value for all 3 of these.
-    _df = copy.deepcopy(labs_df)
-    lab_uuid = _df.apply(
-        lambda row: create_uuid(
-            str(row.MPOG_Patient_ID)
-            + str(row.MPOG_Lab_Concept_ID)
-            + str(row.AIMS_Lab_Observation_DT)
-        ),
-        axis=1,
-    )
-    # Clean COVID result column
-    lab_result = _df.AIMS_Value_Text.apply(clean_covid_result_value).astype(covid_lab_result)
-    # Format String date into DateTime object
-    lab_datetime = _df.AIMS_Lab_Observation_DT.apply(
-        lambda s: datetime.strptime(s, r"%Y-%m-%d %H:%M:%S")
-    )
-    # Notes:
-    # - Drop "AIMS_Value_Numeric" and "AIMS_Value_CD" columns because they have no
-    # information and are all `nan` values.
-    # - Drop "MPOG_Lab_Concept_ID" and "Lab_Concept_Name" because this table is only
-    # - Lab_Concept_Name='Virology - Coronavirus (SARS-CoV-2)', MPOG_Lab_Concept_ID=5179\
-    output_df = (
-        pd.DataFrame(
-            {
-                "LabUUID": lab_uuid,
-                "MPOG_Patient_ID": _df.MPOG_Patient_ID,
-                "Result": lab_result,
-                "DateTime": lab_datetime,
-            }
-        )
-        .drop_duplicates(subset="LabUUID")
-        .sort_values(by=["MPOG_Patient_ID", "DateTime"], ascending=[True, True])
-        .set_index("LabUUID")
-    )
-    return output_df
-
-
-labs_df = format_labs_df(raw_labs_df)
 
 
 def format_cases_df(cases_df: pd.DataFrame) -> pd.DataFrame:
@@ -126,12 +86,27 @@ def format_cases_df(cases_df: pd.DataFrame) -> pd.DataFrame:
     ).apply(lambda input_str: [s.strip() for s in input_str.split(";")] if input_str else [])
     pulm_icd_codes = (pulm_ahrq_diagnoses + pulm_mpog_diagnoses).apply(set).apply(list)
 
+    # Clean admission types
+    def clean_admission_types(value: str) -> str:
+        if value in ("Inpatient", "Admit", "Emergency"):
+            return "Inpatient"
+        elif value == "Outpatient":
+            return "Outpatient"
+        elif value == "23 hour observation":
+            return "Observation"
+        else:
+            return "Unknown"
+
+    admission_type = _df.AdmissionType_Value.apply(clean_admission_types).astype(
+        admission_type_category
+    )
+
     output_df = pd.DataFrame(
         {
             "MPOG_Case_ID": _df.MPOG_Case_ID,
             "MPOG_Patient_ID": _df.MPOG_Patient_ID,
             "AnesStart": anes_start,
-            "Duration": anes_duration,
+            "AnesDuration": anes_duration,
             "Age": _df.AgeInYears_Value,
             "Race": _df.Race_Value,
             "Sex": _df.Sex_Value,
@@ -143,6 +118,7 @@ def format_cases_df(cases_df: pd.DataFrame) -> pd.DataFrame:
             "MORT01": _df.MORT01_Result_Reason,
             "PACU_Duration": pacu_duration,
             "Postop_LOS": postop_los_duration,
+            "AdmissionType": admission_type,
             "SurgeryRegion": _df.PrimaryAnesthesiaCPT_MPOGAnesCPTClass,
             "CardiacProcedureType": _df.ProcedureTypeCardiacAlt_Value,
             "IsCardiacProcedure": _df.ProcedureTypeCardiacAlt_Value == "No",
@@ -150,6 +126,18 @@ def format_cases_df(cases_df: pd.DataFrame) -> pd.DataFrame:
             "PulmonaryComplicationICD": pulm_icd_codes,
         }
     ).set_index("MPOG_Case_ID")
+
+    # Drop Invalid Anesthesia Case Durations (https://phenotypes.mpog.org/Anesthesia%20Duration)
+    output_df = output_df.loc[output_df.AnesDuration > timedelta(minutes=0), :].loc[
+        output_df.AnesDuration < timedelta(hours=36), :
+    ]
+    # Drop Invalid PACU Durations (https://phenotypes.mpog.org/PACU%20Duration)
+    output_df = output_df.loc[output_df.PACU_Duration > timedelta(minutes=0), :].loc[
+        output_df.PACU_Duration < timedelta(hours=20), :
+    ]
+
+    # Drop Unknown Admission Types
+    output_df = output_df.loc[output_df.AdmissionType != "Unknown"]
     return output_df
 
 
@@ -235,33 +223,36 @@ def last_covid_lab_before_case(
     }
 
 
-#%%
-# Jointly iterate through cases and labs by patient ID and associate preop labs with cases
-# This takes ~5 min to run.
-labs_for_cases_for_all_patients = []
-for cases_grp, labs_grp in tqdm(
-    zip(cases_df.groupby("MPOG_Patient_ID"), labs_df.groupby("MPOG_Patient_ID")),
-    desc="Associating Labs to Cases",
-):
-    mpog_case_id, cases = cases_grp
-    lab_uuid, labs = labs_grp
-
-    labs_for_cases = cases.apply(
+# Associate preop labs with cases for each patient, then combine into a single dataframe
+processed_labs_for_all_cases = []
+for cases_grp in tqdm(cases_df.groupby("MPOG_Patient_ID"), desc="Associating Labs to Cases"):
+    # Get dataframe of cases for each patient
+    mpog_patient_id, cases = cases_grp
+    # Get labs only for patient
+    labs = labs_df.loc[labs_df.MPOG_Patient_ID == mpog_patient_id]
+    # For each patient's cases, get last pre-op covid lab test
+    processed_labs_for_cases = cases.apply(
         lambda row: last_covid_lab_before_case(
-            labs_df=labs, mpog_patient_id=row.MPOG_Patient_ID, case_start=row.AnesStart
+            labs_df=labs, mpog_patient_id=mpog_patient_id, case_start=row.AnesStart
         ),
         axis=1,
     ).apply(pd.Series)
-    labs_for_cases_for_all_patients += [labs_for_cases]
+    # Append to all
+    processed_labs_for_all_cases += [processed_labs_for_cases]
 
-labs_for_cases_for_all_patients = pd.concat(labs_for_cases_for_all_patients)
-
+processed_labs_for_all_cases = pd.concat(processed_labs_for_all_cases)
 #%%
+# case_associated_covid_labs_path = processed_dir / "case_associated_covid_labs.parquet"
+# processed_labs_for_all_cases.to_parquet(case_associated_covid_labs_path)
+#%%
+
 # Combine extracted case-level lab info into the Cases Dataframe
-cases_df2 = cases_df.join(labs_for_cases_for_all_patients)
-#%%
+cases_df = cases_df.join(processed_labs_for_all_cases)
+cases_df.LastPositivePreopCovidIntervalCategory = (
+    cases_df.LastPositivePreopCovidIntervalCategory.astype(covid_case_interval_category)
+)
 # Get only patients with a positive Preop COVID test
-cases_with_positive_preop_covid = cases_df2.loc[cases_df2.HasPositivePreopCovidTest]
+cases_with_positive_preop_covid = cases_df.loc[cases_df.HasPositivePreopCovidTest]
 # Categorical Groups
 cases_with_positive_preop_covid.LastPositivePreopCovidIntervalCategory.value_counts().sort_index()
 # 0-2_weeks    383
@@ -295,29 +286,110 @@ p1.set(
 )
 # Orange = 0-2 weeks (actually 0-2.5 weeks)
 p1.fill_betweenx(
-    y=[-0.4, 0.4],
-    x1=0,
-    x2=17,
-    alpha=0.5,
-    color=matplotlib.colors.TABLEAU_COLORS["tab:orange"]
+    y=[-0.4, 0.4], x1=0, x2=17, alpha=0.5, color=matplotlib.colors.TABLEAU_COLORS["tab:orange"]
 )
 # Red = 3-4 weeks (actually 2.5-4.5 weeks)
 p1.fill_betweenx(
-    y=[-0.4, 0.4],
-    x1=17,
-    x2=31,
-    alpha=0.5,
-    color=matplotlib.colors.TABLEAU_COLORS["tab:red"]
+    y=[-0.4, 0.4], x1=17, x2=31, alpha=0.5, color=matplotlib.colors.TABLEAU_COLORS["tab:red"]
 )
 # Cyan = 5-6 weeks (actually 4.5-7.5 weeks)
 p1.fill_betweenx(
-    y=[-0.4, 0.4],
-    x1=31,
-    x2=45,
-    alpha=0.5,
-    color=matplotlib.colors.TABLEAU_COLORS["tab:cyan"]
+    y=[-0.4, 0.4], x1=31, x2=45, alpha=0.5, color=matplotlib.colors.TABLEAU_COLORS["tab:cyan"]
 )
 # White: >= 7 weeks (actually 7.5+ weeks)
+#%%
+# Case Count
+ax = sns.countplot(x=cases_with_positive_preop_covid.LastPositivePreopCovidIntervalCategory)
+ax.set(
+    title="Number of Cases for each SARS-CoV-2 PCR+ Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+#%%
+# ASA score
+ax = sns.histplot(
+    x=cases_with_positive_preop_covid.LastPositivePreopCovidIntervalCategory,
+    hue=cases_with_positive_preop_covid.ASA,
+    stat="percent",
+    multiple="fill",
+)
+ax.set(
+    title="ASA for SARS-CoV-2 PCR+ by Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+#%%
+# Admission Status
+ax = sns.histplot(
+    x=cases_with_positive_preop_covid.LastPositivePreopCovidIntervalCategory,
+    hue=cases_with_positive_preop_covid.AdmissionType,
+    stat="percent",
+    multiple="fill",
+)
+ax.set(
+    title="ASA for SARS-CoV-2 PCR+ by Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+#%%
+# Anesthesia Case Duration
+ax = sns.violinplot(
+    x=cases_with_positive_preop_covid.LastPositivePreopCovidIntervalCategory,
+    y=(cases_with_positive_preop_covid.AnesDuration.dt.total_seconds() / 3600).astype(int),
+)
+ax.set(
+    title="Anesthesia Case Duration for SARS-CoV-2 PCR+ by Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+    ylabel="Anesthesia Case Duration (hours)",
+)
+#%%
+# PACU Duration
+ax = sns.violinplot(
+    x=cases_with_positive_preop_covid.LastPositivePreopCovidIntervalCategory,
+    y=(cases_with_positive_preop_covid.PACU_Duration.dt.total_seconds() / 60).astype(int),
+)
+ax.set(
+    title="PACU Duration for SARS-CoV-2 PCR+ by Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+    ylabel="PACU Duration (minutes)",
+)
+#%%
+# Length of Stay
+ax = sns.violinplot(
+    x=cases_with_positive_preop_covid.LastPositivePreopCovidIntervalCategory,
+    y=cases_with_positive_preop_covid.Postop_LOS.dt.days,
+)
+ax.set(
+    title="Post-op Length of Stay for SARS-CoV-2 PCR+ by Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+    ylabel="Post-op Length of Stay (days)",
+)
+
+#%%
+#%%
+# Count of Patients with Post-op Pulmonary Complications
+ax = sns.countplot(
+    x=cases_with_positive_preop_covid.LastPositivePreopCovidIntervalCategory,
+    hue=cases_with_positive_preop_covid.PulmonaryComplication.apply(
+        lambda x: True if "Yes" in x else False
+    ),
+)
+ax.set(
+    title="Post-op Pulmonary Complication (AHRQ + MPOG Definitions) for SARS-CoV-2 PCR+ by Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+    ylabel="Count",
+)
+#%%
+# Percent of Patients with Post-op Pulmonary Complications
+ax = sns.histplot(
+    x=cases_with_positive_preop_covid.LastPositivePreopCovidIntervalCategory,
+    hue=cases_with_positive_preop_covid.PulmonaryComplication.apply(
+        lambda x: True if "Yes" in x else False
+    ),
+    stat="percent",
+    multiple="fill",
+)
+ax.set(
+    title="Post-op Pulmonary Complication (AHRQ + MPOG Definitions) for SARS-CoV-2 PCR+ by Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
 
 
 #%%
