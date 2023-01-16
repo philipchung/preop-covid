@@ -21,10 +21,12 @@ class LabData:
     )
 
     def __post_init__(self) -> None:
+        "Called upon object instance creation."
+        # If path passed into labs_df argument, load dataframe from path
         if isinstance(self.labs_df, str | Path):
             df = read_pandas(self.labs_df)
-            self.raw_labs_df = copy.deepcopy(df)
-            self.labs_df = self.format_labs_df(df)
+        self.raw_labs_df = copy.deepcopy(df)
+        self.labs_df = self.format_labs_df(df)
 
     def __call__(self) -> pd.DataFrame:
         return self.labs_df

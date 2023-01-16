@@ -1,18 +1,14 @@
 #%%
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
 
 import matplotlib
-import numpy as np
 import pandas as pd
 import seaborn as sns
 from case_data import CaseData
 from lab_data import LabData
 from matplotlib import pyplot as plt
-from tqdm.auto import tqdm
 
 # Define data paths and directories
 project_dir = Path("/Users/chungph/Developer/preop-covid")
@@ -36,116 +32,11 @@ lab_data = LabData(labs_df=labs_path)
 labs_df = lab_data()
 
 case_data = CaseData(cases_df=cases_path)
+case_data.associate_labs_to_cases(labs_df=labs_df)
 cases_df = case_data()
 #%%
 
 
-def categorize_duration(duration: timedelta) -> str | None:
-    """Creates buckets of duration similar to how COVIDSurg 2021 paper did it.
-    'Timing of surgery following SARS-CoV-2 infection: an international prospective cohort study'
-    (https://pubmed.ncbi.nlm.nih.gov/33690889/)
-
-    Args:
-        duration (timedelta): duration of time used to create category/bin.
-
-    Returns:
-        str: String description of category of covid case interval.
-            For time durations of 0 and negative, None is returned.
-    """
-    if duration <= timedelta(seconds=0):
-        return None
-    elif duration < timedelta(weeks=3):
-        return "0-2_weeks"
-    elif duration >= timedelta(weeks=3) and duration < timedelta(weeks=5):
-        return "3-4_weeks"
-    elif duration >= timedelta(weeks=5) and duration < timedelta(weeks=7):
-        return "5-6_weeks"
-    else:
-        return ">=7_weeks"
-
-
-def last_covid_lab_before_case(
-    labs_df: pd.DataFrame, mpog_patient_id: str, case_start: pd.Timestamp | datetime
-) -> dict[str, Any]:
-    """Get most recent COVID lab test before case start datetime.  Lab values occuring
-    after case_start are ignored.
-
-    Args:
-        labs_df (pd.DataFrame): cleaned labs dataframe
-        mpog_patient_id (str): MPOG unique patient identifier
-        case_start (pd.Timestamp | datetime): anesthesia start time
-
-    Returns:
-        dict[str, Any]: dictionary of most recent covid result as well as whether patient
-            had positive covid result lab test in the stratified time intervals:
-            0-2 weeks, 3-4 weeks, 5-6 weeks, >7 weeks.
-    """
-    labs = labs_df.loc[labs_df.MPOG_Patient_ID == mpog_patient_id, :].sort_values(
-        by="DateTime", ascending=True
-    )
-    # Create Timedelta objects for duration interval between lab and case
-    labs["LabCaseInterval"] = case_start - labs.DateTime
-    labs["LabCaseIntervalCategory"] = (
-        labs["LabCaseInterval"].apply(categorize_duration).astype(covid_case_interval_category)
-    )
-    # Get Only Pre-op Labs Prior to Case
-    labs["PreopLab"] = labs.DateTime < case_start
-    preop_labs = labs.loc[labs.PreopLab, :]
-    # Get Only Positive Pre-op Labs Prior to Case
-    pos_preop_labs = preop_labs.loc[preop_labs.Result == "Positive"]
-    has_positive_preop_covid_test = not pos_preop_labs.empty
-    if has_positive_preop_covid_test:
-        last_positive_preop_covid_test = pos_preop_labs.tail(n=1)
-        last_positive_preop_covid_labuuid = last_positive_preop_covid_test.index.item()
-        last_positive_preop_covid_datetime = last_positive_preop_covid_test.DateTime.item()
-        last_positive_preop_covid_interval = last_positive_preop_covid_test.LabCaseInterval.item()
-        last_positive_preop_covid_interval_category = (
-            last_positive_preop_covid_test.LabCaseIntervalCategory.item()
-        )
-    else:
-        last_positive_preop_covid_labuuid = None
-        last_positive_preop_covid_datetime = None
-        last_positive_preop_covid_interval = None
-        last_positive_preop_covid_interval_category = None
-
-    return {
-        "EverCovidPositive": any(preop_labs.Result == "Positive"),
-        "HasPositivePreopCovidTest": has_positive_preop_covid_test,
-        "LastPositivePreopCovidLabUUID": last_positive_preop_covid_labuuid,
-        "LastPositivePreopCovidDateTime": last_positive_preop_covid_datetime,
-        "LastPositivePreopCovidInterval": last_positive_preop_covid_interval,
-        "LastPositivePreopCovidIntervalCategory": last_positive_preop_covid_interval_category,
-    }
-
-
-# Associate preop labs with cases for each patient, then combine into a single dataframe
-processed_labs_for_all_cases = []
-for cases_grp in tqdm(cases_df.groupby("MPOG_Patient_ID"), desc="Associating Labs to Cases"):
-    # Get dataframe of cases for each patient
-    mpog_patient_id, cases = cases_grp
-    # Get labs only for patient
-    labs = labs_df.loc[labs_df.MPOG_Patient_ID == mpog_patient_id]
-    # For each patient's cases, get last pre-op covid lab test
-    processed_labs_for_cases = cases.apply(
-        lambda row: last_covid_lab_before_case(
-            labs_df=labs, mpog_patient_id=mpog_patient_id, case_start=row.AnesStart
-        ),
-        axis=1,
-    ).apply(pd.Series)
-    # Append to all
-    processed_labs_for_all_cases += [processed_labs_for_cases]
-
-processed_labs_for_all_cases = pd.concat(processed_labs_for_all_cases)
-#%%
-# case_associated_covid_labs_path = processed_dir / "case_associated_covid_labs.parquet"
-# processed_labs_for_all_cases.to_parquet(case_associated_covid_labs_path)
-#%%
-
-# Combine extracted case-level lab info into the Cases Dataframe
-cases_df = cases_df.join(processed_labs_for_all_cases)
-cases_df.LastPositivePreopCovidIntervalCategory = (
-    cases_df.LastPositivePreopCovidIntervalCategory.astype(covid_case_interval_category)
-)
 # Get only patients with a positive Preop COVID test
 cases_with_positive_preop_covid = cases_df.loc[cases_df.HasPositivePreopCovidTest]
 # Categorical Groups
