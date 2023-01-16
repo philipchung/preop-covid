@@ -12,14 +12,22 @@ from utils import create_uuid, read_pandas
 
 @dataclass
 class LabData:
+    """Data object to load labs dataframe, clean and process data."""
+
     labs_df: str | Path | pd.DataFrame
+    raw_labs_df: pd.DataFrame = None
     covid_lab_result_category: CategoricalDtype = CategoricalDtype(
         categories=["Negative", "Positive", "Unknown"], ordered=False
     )
 
     def __post_init__(self) -> None:
         if isinstance(self.labs_df, str | Path):
-            self.labs_df = read_pandas(self.labs_df)
+            df = read_pandas(self.labs_df)
+            self.raw_labs_df = copy.deepcopy(df)
+            self.labs_df = self.format_labs_df(df)
+
+    def __call__(self) -> pd.DataFrame:
+        return self.labs_df
 
     def format_labs_df(self, labs_df: pd.DataFrame) -> pd.DataFrame:
         """Clean labs dataframe.  This returns a new dataframe with different column values.
