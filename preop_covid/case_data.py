@@ -84,7 +84,10 @@ class CaseData:
             pd.DataFrame: transformed output dataframe
         """
         _df = copy.deepcopy(cases_df)
+        # Set MPOG_Case_ID as primary index
+        _df = _df.set_index("MPOG_Case_ID")
 
+        ### Format Basic Case Info
         # Format Anesthesia Start into DateTime object
         anes_start = _df.AnesthesiaStart_Value.apply(
             lambda s: datetime.strptime(s, r"%Y-%m-%d %H:%M:%S")
@@ -99,15 +102,6 @@ class CaseData:
         postop_los_duration = _df.PostopLengthOfStayDays_Value.fillna(0).apply(
             lambda days: timedelta(days=days)
         )
-
-        # Get all ICD codes for pulmonary complications
-        pulm_ahrq_diagnoses = _df.ComplicationAHRQPulmonaryAll_Triggering_AHRQ_Diagnoses.replace(
-            np.nan, None
-        ).apply(lambda input_str: [s.strip() for s in input_str.split(";")] if input_str else [])
-        pulm_mpog_diagnoses = _df.ComplicationAHRQPulmonaryAll_Triggering_MPOG_Diagnoses.replace(
-            np.nan, None
-        ).apply(lambda input_str: [s.strip() for s in input_str.split(";")] if input_str else [])
-        pulm_icd_codes = (pulm_ahrq_diagnoses + pulm_mpog_diagnoses).apply(set).apply(list)
 
         # Clean admission types
         def clean_admission_types(value: str) -> str:
@@ -124,9 +118,14 @@ class CaseData:
             self.admission_type_category
         )
 
-        output_df = pd.DataFrame(
-            {
-                "MPOG_Case_ID": _df.MPOG_Case_ID,
+        # Emergency Case?
+        is_emergency = _df.EmergencyStatusClassification_Value.apply(
+            lambda value: True if value == "Yes" else False
+        )
+
+        # Basic Case Info Dataframe
+        case_df = pd.DataFrame(
+            data={
                 "MPOG_Patient_ID": _df.MPOG_Patient_ID,
                 "AnesStart": anes_start,
                 "AnesDuration": anes_duration,
@@ -134,6 +133,7 @@ class CaseData:
                 "Race": _df.Race_Value,
                 "Sex": _df.Sex_Value,
                 "ASA": _df.AsaStatusClassification_Value,
+                "IsEmergency": is_emergency,
                 "BMI": _df.BodyMassIndex_Value,
                 "Weight": _df.Weight_Value,
                 "Height": _df.Height_Value,
@@ -145,24 +145,159 @@ class CaseData:
                 "SurgeryRegion": _df.PrimaryAnesthesiaCPT_MPOGAnesCPTClass,
                 "CardiacProcedureType": _df.ProcedureTypeCardiacAlt_Value,
                 "IsCardiacProcedure": _df.ProcedureTypeCardiacAlt_Value == "No",
-                "PulmonaryComplication": _df.ComplicationAHRQPulmonaryAll_Value,
-                "PulmonaryComplicationICD": pulm_icd_codes,
-            }
-        ).set_index("MPOG_Case_ID")
+            },
+            index=_df.index,
+        )
 
         # Drop Invalid Anesthesia Case Durations (https://phenotypes.mpog.org/Anesthesia%20Duration)
-        output_df = output_df.loc[output_df.AnesDuration > timedelta(minutes=0), :].loc[
-            output_df.AnesDuration < timedelta(hours=36), :
+        case_df = case_df.loc[case_df.AnesDuration > timedelta(minutes=0), :].loc[
+            case_df.AnesDuration < timedelta(hours=36), :
         ]
         # Drop Invalid PACU Durations (https://phenotypes.mpog.org/PACU%20Duration)
-        output_df = output_df.loc[output_df.PACU_Duration > timedelta(minutes=0), :].loc[
-            output_df.PACU_Duration < timedelta(hours=20), :
+        case_df = case_df.loc[case_df.PACU_Duration > timedelta(minutes=0), :].loc[
+            case_df.PACU_Duration < timedelta(hours=20), :
         ]
 
-        # # Drop Unknown Admission Types
-        # output_df = output_df.loc[output_df.AdmissionType != "Unknown"]
+        ### Elixhauser & MPOG Comorbidities
+        elixhauser_comorbidities = [
+            "ComorbidityElixhauserCardiacArrhythmias_Value",
+            "ComorbidityElixhauserChronicPulmonaryDisease_Value",
+            "ComorbidityElixhauserCongestiveHeartFailure_Value",
+            "ComorbidityElixhauserDiabetesComplicated_Value",
+            "ComorbidityElixhauserDiabetesUncomplicated_Value",
+            "ComorbidityElixhauserHypertensionComplicated_Value",
+            "ComorbidityElixhauserHypertensionUncomplicated_Value",
+            "ComorbidityElixhauserLiverDisease_Value",
+            "ComorbidityElixhauserMetastaticCancer_Value",
+            "ComorbidityElixhauserObesity_Value",
+            "ComorbidityElixhauserPeripheralVascularDisorders_Value",
+            "ComorbidityElixhauserPulmonaryCirculationDisorders_Value",
+            "ComorbidityElixhauserRenalFailure_Value",
+            "ComorbidityElixhauserValvularDisease_Value",
+        ]
+        mpog_comorbidities = [
+            "ComorbidityMpogCerebrovascularDisease_Value_Code",
+            "ComorbidityMpogCoronaryArteryDisease_Value_Code",
+        ]
+        comorbidities = elixhauser_comorbidities + mpog_comorbidities
+        # Drop Cases that do not have ICD Codes documented for comorbidities, then convert to boolean
+        comorbidities_df = (
+            _df.loc[:, comorbidities]
+            .applymap(self.booleanize_comorbidity)
+            .astype(bool)
+            .dropna(axis=0, how="any")
+        )
+        # Remove suffix _Value or _Value_Code
+        comorbidities_df.columns = [col.split("_")[0] for col in comorbidities_df.columns]
 
+        ### AHRQ & MPOG Complications
+        ## Pulmonary Complications
+        # Reference: https://phenotypes.mpog.org/AHRQ%20Complication%20-%20Pulmonary%20-%20All
+        # Get all ICD codes for pulmonary complications
+        pulm_ahrq_diagnoses = _df.ComplicationAHRQPulmonaryAll_Triggering_AHRQ_Diagnoses.replace(
+            np.nan, None
+        ).apply(lambda input_str: [s.strip() for s in input_str.split(";")] if input_str else [])
+        pulm_mpog_diagnoses = _df.ComplicationAHRQPulmonaryAll_Triggering_MPOG_Diagnoses.replace(
+            np.nan, None
+        ).apply(lambda input_str: [s.strip() for s in input_str.split(";")] if input_str else [])
+        pulm_icd_codes = (pulm_ahrq_diagnoses + pulm_mpog_diagnoses).apply(set).apply(list)
+
+        def clean_pulm_complication_presence(value: str) -> str:
+            if "Yes" in value:
+                return "Yes"
+            elif value == "No":
+                return "No"
+            elif "Unknown" in value:
+                return "Unknown"
+            else:
+                raise ValueError(f"Unknown value {value} for clean_pulm_complication_presence")
+
+        had_pulm_complication = _df.ComplicationAHRQPulmonaryAll_Value.apply(
+            clean_pulm_complication_presence
+        )
+
+        ## Cardiac Complications
+
+        def clean_cardiac_complication_presence(value: str) -> str:
+            if value == 1:
+                return "Yes"
+            elif value == 0:
+                return "No"
+            elif value == -999:
+                return "Unknown"
+            else:
+                raise ValueError(f"Unknown value {value} for clean_cardiac_complication_presence")
+
+        had_cardiac_complication = _df.ComplicationAHRQCardiac_Value.apply(
+            clean_cardiac_complication_presence
+        )
+        had_myocardial_infarction = _df.ComplicationAHRQMyocardialInfarction_Value.apply(
+            lambda value: True if value == "YES" else False
+        ).astype(bool)
+
+        ## Renal Complications
+        # Reference: https://phenotypes.mpog.org/MPOG%20Complication%20-%20Acute%20Kidney%20Injury%20(AKI)
+
+        def clean_aki_complication_presence(value: str) -> str:
+            if value in (1, 2, 3):
+                return "AKI"
+            elif value == 0:
+                return "No AKI"
+            elif value == -2:
+                return "Pre-existing ESRD"
+            elif value in (-1, -3, -999):
+                return "Unknown"
+            else:
+                raise ValueError(f"Unknown value {value} for clean_aki_complication_presence")
+
+        had_aki = _df.ComplicationMpogAcuteKidneyInjury_Value.apply(clean_aki_complication_presence)
+
+        complications_df = pd.DataFrame(
+            data={
+                "HadAKIComplication": had_aki,
+                "HadCardiacComplication": had_cardiac_complication,
+                "HadMyocardialInfarctionComplication": had_myocardial_infarction,
+                "HadPulmonaryComplication": had_pulm_complication,
+                "PulmonaryComplicationICD": pulm_icd_codes,
+            },
+            index=_df.index,
+        )
+
+        ### Combine Basic Case Info, Comorbidities, Complications Dataframes
+        common_indices = list(
+            set.intersection(
+                set(case_df.index), set(comorbidities_df.index), set(complications_df.index)
+            )
+        )
+        case_df_subset = case_df.loc[common_indices, :]
+        comorbidities_df_subset = comorbidities_df.loc[common_indices, :]
+        complications_df_subset = complications_df.loc[common_indices, :]
+        output_df = case_df_subset.join(comorbidities_df_subset).join(complications_df_subset)
         return output_df
+
+    def booleanize_comorbidity(self, value: int) -> bool | float:
+        """Elixhauser and MPOG Comorbidities in MPOG Dataset has 3 values in raw data:
+            0 = No (No ICD-9 or ICD-10 codes that matches comorbidity)
+            1 = Yes (Presence of ICD-9 or ICD-10 code that maches comorbidity)
+            -999 = Unknown (No ICD-9 or ICD-10 codes recorded)
+
+            References:
+            - https://phenotypes.mpog.org/MPOG%20Comorbidity%20-%20Cerebrovascular%20Disease
+            - https://phenotypes.mpog.org/Elixhauser%20Comorbidity%20-%20Cardiac%20Arrhythmias
+        Args:
+            value (int): comorbidity value
+
+        Returns:
+            bool: True (1), False (0) or np.nan (-999)
+        """
+        if value == 1:
+            return True
+        elif value == 0:
+            return False
+        elif value == -999:
+            return np.nan
+        else:
+            raise ValueError("Cannot booleanize value {value} for comorbidity.")
 
     def associate_labs_to_cases(
         self,
@@ -177,15 +312,19 @@ class CaseData:
         if processed_case_lab_association_path:
             self.processed_case_lab_association_path = processed_case_lab_association_path
         try:
-            # Load cached result from disk
-            self.case_lab_association_df = read_pandas(
-                self.processed_case_lab_association_path
-            ).astype(
+            # Load cached result from disk, convert durations/intervals to timedelta
+            case_lab_association_df = read_pandas(self.processed_case_lab_association_path).astype(
                 {
                     "LabCaseIntervalCategory": self.covid_case_interval_category,
                     "LabCaseIntervalCategory2": self.covid_case_interval_category2,
                 }
             )
+            case_lab_association_df["LastPostitiveCovidInterval"] = (
+                case_lab_association_df["LastPositiveCovidInterval"]
+                .apply(pd.Timedelta)
+                .astype("timedelta64[ns]")
+            )
+            self.case_lab_association_df = case_lab_association_df
         except FileNotFoundError:
             if not isinstance(labs_df, pd.DataFrame):
                 raise ValueError("Must provide argument `labs_df`.")
@@ -209,9 +348,19 @@ class CaseData:
                 # Accumulate for all patients and cases
                 processed_labs_for_all_cases += [processed_labs_for_cases]
 
-            self.case_lab_association_df = pd.concat(processed_labs_for_all_cases)
-            # Cache result on disk
-            self.case_lab_association_df.to_parquet(self.processed_case_lab_association_path)
+            self.case_lab_association_df = pd.concat(processed_labs_for_all_cases).astype(
+                {
+                    "LastPositiveCovidInterval": "timedelta64[ns]",
+                    "LabCaseIntervalCategory": self.covid_case_interval_category,
+                    "LabCaseIntervalCategory2": self.covid_case_interval_category2,
+                }
+            )
+            # Cache result on disk, convert timedelta to durations/intervals
+            case_lab_association_df = copy.deepcopy(self.case_lab_association_df)
+            case_lab_association_df["LastPositiveCovidInterval"] = case_lab_association_df[
+                "LastPositiveCovidInterval"
+            ].apply(lambda x: x.isoformat())
+            case_lab_association_df.to_parquet(self.processed_case_lab_association_path)
 
         if update_cases_df:
             self.cases_df = self.cases_df.join(self.case_lab_association_df)
