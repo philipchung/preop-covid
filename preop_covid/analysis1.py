@@ -3,11 +3,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import matplotlib
 import pandas as pd
 import seaborn as sns
 from case_data import CaseData
 from lab_data import LabData
+from matplotlib import colors
 from matplotlib import pyplot as plt
 
 # Define data paths and directories
@@ -35,12 +35,10 @@ case_data = CaseData(cases_df=cases_path)
 case_data.associate_labs_to_cases(labs_df=labs_df)
 cases_df = case_data()
 
-# TODO: Fix datatimes for ... (these are values from cases_df on creation--not when loading from cache)
-# LastPositiveCovidInterval             object
-# LabCaseIntervalCategory               object
-# LabCaseIntervalCategory2              object
-
-#%%
+#%% [markdown]
+# ## Lab Case Interval Definitions
+# #%%
+# 1-week Intervals
 cases_df.LabCaseIntervalCategory.value_counts()
 # Never        34307
 # >=8_Weeks      424
@@ -54,6 +52,7 @@ cases_df.LabCaseIntervalCategory.value_counts()
 # 6-7_Weeks       25
 # Name: LabCaseIntervalCategory, dtype: int64
 #%%
+# 2-week Intervals
 cases_df.LabCaseIntervalCategory2.value_counts()
 # >=8_Weeks      424
 # 0-2_Weeks      297
@@ -61,8 +60,13 @@ cases_df.LabCaseIntervalCategory2.value_counts()
 # 4-6_Weeks       87
 # 6-8_Weeks       58
 # Name: LabCaseIntervalCategory2, dtype: int64
+#%% [markdown]
+# ## Patients with Positive Pre-op COVID test
 #%%
+# Number of patienst that have had a positive SARS-CoV-2 PCR test
+cases_df.HasPositivePreopCovidTest.value_counts()
 
+#%%
 # Get only patients with a positive Preop COVID test
 cases_with_positive_preop_covid = cases_df[cases_df.HasPositivePreopCovidTest]
 # Distribution of time of last positive COVID test until Surgery Case
@@ -79,124 +83,333 @@ cases_with_positive_preop_covid.LastPositiveCovidInterval.describe()
 # %%
 # Swarm Plot Showing COVID+ Patients and time Interval Until Surgery
 # Colored regions indicate time intervals form categories
-
-fig = plt.figure(figsize=(10, 5))
-p1 = sns.swarmplot(
-    data=cases_with_positive_preop_covid.LastPositivePreopCovidInterval.dt.days, orient="h", size=3
+sns.set(
+    context="notebook",
+    style="darkgrid",
+    palette="deep",
+    font="sans-serif",
+    font_scale=1,
+    color_codes=True,
+    rc={"figure.figsize": (11.7, 8.27)},
 )
-p1.set(
+
+fig, ax = plt.subplots(figsize=(16, 8))
+sns.swarmplot(
+    data=cases_with_positive_preop_covid.LastPositiveCovidInterval.dt.days,
+    orient="h",
+    size=3,
+    ax=ax,
+)
+ax.set(
     xlabel="Number of Days Since Positive SARS-CoV-2 PCR Test",
     title="Time Interval Between PCR-confirmed COVID19 Infection and Surgery",
 )
-# Orange = 0-2 weeks (actually 0-2.5 weeks)
-p1.fill_betweenx(
-    y=[-0.4, 0.4], x1=0, x2=17, alpha=0.5, color=matplotlib.colors.TABLEAU_COLORS["tab:orange"]
-)
-# Red = 3-4 weeks (actually 2.5-4.5 weeks)
-p1.fill_betweenx(
-    y=[-0.4, 0.4], x1=17, x2=31, alpha=0.5, color=matplotlib.colors.TABLEAU_COLORS["tab:red"]
-)
-# Cyan = 5-6 weeks (actually 4.5-7.5 weeks)
-p1.fill_betweenx(
-    y=[-0.4, 0.4], x1=31, x2=45, alpha=0.5, color=matplotlib.colors.TABLEAU_COLORS["tab:cyan"]
-)
-# White: >= 7 weeks (actually 7.5+ weeks)
+# 0-2 weeks
+ax.fill_betweenx(y=[-0.5, 0.5], x1=0, x2=14, alpha=0.25, color=colors.TABLEAU_COLORS["tab:blue"])
+# 2-4 weeks
+ax.fill_betweenx(y=[-0.5, 0.5], x1=14, x2=28, alpha=0.25, color=colors.TABLEAU_COLORS["tab:orange"])
+# 4-6 weeks
+ax.fill_betweenx(y=[-0.5, 0.5], x1=28, x2=42, alpha=0.25, color=colors.TABLEAU_COLORS["tab:green"])
+# 6-8 weeks
+ax.fill_betweenx(y=[-0.5, 0.5], x1=42, x2=56, alpha=0.25, color=colors.TABLEAU_COLORS["tab:red"])
+# White: >= 8 weeks
 
-# TODO: mark new zones for 1-week and 2-week intervals
-
-# TODO: Order of interval categories is out of order in plots--fix this
-
+#%% [markdown]
+# ## Basic Case Info for Patients with history of COVID+ by PCR test
 #%%
 # Case Count
-ax = sns.countplot(x=cases_with_positive_preop_covid.LabCaseIntervalCategory2)
+fig, ax = plt.subplots()
+sns.countplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    order=case_data.covid_case_interval_category2.categories[:-1],
+    ax=ax,
+)
 ax.set(
-    title="Number of Cases for each SARS-CoV-2 PCR+ Category",
+    title="Number of Cases for Pre-op COVID Category",
     xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
 )
 #%%
 # ASA score
-ax = sns.histplot(
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
     x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
     hue=cases_with_positive_preop_covid.ASA,
+    hue_order=["ASA Class 1", "ASA Class 2", "ASA Class 3", "ASA Class 4", "ASA Class 5"],
     stat="percent",
     multiple="fill",
+    ax=ax[0],
 )
-ax.set(
-    title="ASA for SARS-CoV-2 PCR+ by Category",
+ax[0].set(
+    title="ASA for Pre-op COVID Category",
     xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
 )
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
+
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ASA,
+    hue_order=["ASA Class 1", "ASA Class 2", "ASA Class 3", "ASA Class 4", "ASA Class 5"],
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="ASA for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
+#%%
+# Emergency Modifier
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.IsEmergency,
+    stat="percent",
+    multiple="fill",
+    ax=ax[0],
+)
+ax[0].set(
+    title="Emergency Case Designation for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
+
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.IsEmergency,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="Emergency Case Designation for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
+#%%
+# Anatomical Location of Surgery
+fig, ax = plt.subplots(figsize=(16, 10))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.SurgeryRegion,
+    stat="count",
+    multiple="dodge",
+    ax=ax,
+)
+loc, labels = plt.xticks()
+ax.set(
+    title="Anatomical Region for Surgery/Procedure for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+ax.set_xticklabels(labels, rotation=45)
+for x in ax.containers:
+    ax.bar_label(x, label_type="edge")
+
 #%%
 # Admission Status
-ax = sns.histplot(
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
     x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
     hue=cases_with_positive_preop_covid.AdmissionType,
     stat="percent",
     multiple="fill",
-).set(
-    title="Admission Type for SARS-CoV-2 PCR+ by Category",
+    ax=ax[0],
+)
+ax[0].set(
+    title="Admission Type for Pre-op COVID Category",
     xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
 )
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
+
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.AdmissionType,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="Admission Type for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
 #%%
 # Anesthesia Case Duration
-ax = sns.violinplot(
+fig, ax = plt.subplots()
+sns.violinplot(
     x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
     y=(cases_with_positive_preop_covid.AnesDuration.dt.total_seconds() / 3600).astype(int),
-).set(
-    title="Anesthesia Case Duration for SARS-CoV-2 PCR+ by Category",
+    order=case_data.covid_case_interval_category2.categories[:-1],
+    ax=ax,
+)
+ax.set(
+    title="Anesthesia Case Duration for Pre-op COVID Category",
     xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
     ylabel="Anesthesia Case Duration (hours)",
 )
 #%%
 # PACU Duration
-ax = sns.violinplot(
-    x=cases_with_positive_preop_covid.LabCaseIntervalCategory,
+fig, ax = plt.subplots()
+sns.violinplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
     y=(cases_with_positive_preop_covid.PACU_Duration.dt.total_seconds() / 60).astype(int),
-).set(
-    title="PACU Duration for SARS-CoV-2 PCR+ by Category",
+    order=case_data.covid_case_interval_category2.categories[:-1],
+    ax=ax,
+)
+ax.set(
+    title="PACU Duration for Pre-op COVID Category",
     xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
     ylabel="PACU Duration (minutes)",
 )
+
 #%%
 # Length of Stay
-ax = sns.violinplot(
-    x=cases_with_positive_preop_covid.LabCaseIntervalCategory,
+fig, ax = plt.subplots()
+sns.violinplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
     y=cases_with_positive_preop_covid.Postop_LOS.dt.days,
-).set(
-    title="Post-op Length of Stay for SARS-CoV-2 PCR+ by Category",
+    order=case_data.covid_case_interval_category2.categories[:-1],
+    ax=ax,
+)
+ax.set(
+    title="Post-op Length of Stay for Pre-op COVID Category",
     xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
     ylabel="Post-op Length of Stay (days)",
 )
 
+
+#%% [markdown]
+# ## Post-op Complications (by MPOG and AHRQ definitions)
+# Presumed that this records only new post-op complications, but MPOG phenotypes do not
+# clearly define how all of these are computed
 #%%
-# Count of Patients with Post-op Pulmonary Complications
-ax = sns.countplot(
-    x=cases_with_positive_preop_covid.LabCaseIntervalCategory,
-    hue=cases_with_positive_preop_covid.PulmonaryComplication.apply(
-        lambda x: True if "Yes" in x else False
-    ),
-).set(
-    title="Post-op Pulmonary Complication (AHRQ + MPOG Definitions) for SARS-CoV-2 PCR+ by Category",
-    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
-    ylabel="Count",
-)
-#%%
-# Percent of Patients with Post-op Pulmonary Complications
-ax = sns.histplot(
-    x=cases_with_positive_preop_covid.LabCaseIntervalCategory,
-    hue=cases_with_positive_preop_covid.PulmonaryComplication.apply(
-        lambda x: True if "Yes" in x else False
-    ),
+# Post-op Pulmonary Complications
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.HadPulmonaryComplication,
     stat="percent",
     multiple="fill",
-).set(
-    title="Post-op Pulmonary Complication (AHRQ + MPOG Definitions) for SARS-CoV-2 PCR+ by Category",
+    ax=ax[0],
+)
+ax[0].set(
+    title="Post-op Pulmonary Complication (AHRQ + MPOG Definition) for Pre-op COVID Category",
     xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
 )
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
 
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.HadPulmonaryComplication,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="Post-op Pulmonary Complication (AHRQ + MPOG Definition) for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
+#%%
+# Post-op Cardiac Complications
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.HadCardiacComplication,
+    stat="percent",
+    multiple="fill",
+    ax=ax[0],
+)
+ax[0].set(
+    title="Post-op Cardiac Complication (AHRQ + MPOG Definition) for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
 
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.HadCardiacComplication,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="Post-op Cardiac Complication (AHRQ + MPOG Definition) for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
+#%%
+# Post-op Myocardial Infarction Complications
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.HadMyocardialInfarctionComplication,
+    stat="percent",
+    multiple="fill",
+    ax=ax[0],
+)
+ax[0].set(
+    title="Post-op Myocardial Infarction Complication (AHRQ Definition) for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
+
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.HadMyocardialInfarctionComplication,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="Post-op Myocardial Infarction Complication (AHRQ Definition) for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
+#%%
+# Post-op AKI Complications
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.HadAKIComplication,
+    stat="percent",
+    multiple="fill",
+    ax=ax[0],
+)
+ax[0].set(
+    title="Post-op AKI Complication (MPOG Definition) for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
+
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.HadAKIComplication,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="Post-op AKI Complication (MPOG Definition) for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
 #%%
 # TODO:
-# - stratify population based on the following variable
 
 # 3. get data on whether patient has date of COVID vaccinations (full vs booster)
 #   - bool: vaccinated or not?
@@ -208,6 +421,5 @@ ax = sns.histplot(
 # 3. Post-op Length of Stay - done
 # 4. 30-day hospital mortality - done
 
-# TODO: create only negative COVID PCR tests as comparison baseline
 
 # %%
