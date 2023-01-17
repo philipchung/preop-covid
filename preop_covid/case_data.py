@@ -313,18 +313,17 @@ class CaseData:
             self.processed_case_lab_association_path = processed_case_lab_association_path
         try:
             # Load cached result from disk, convert durations/intervals to timedelta
-            case_lab_association_df = read_pandas(self.processed_case_lab_association_path).astype(
+            case_lab_association_df = read_pandas(self.processed_case_lab_association_path)
+            case_lab_association_df["LastPostitiveCovidInterval"] = case_lab_association_df[
+                "LastPositiveCovidInterval"
+            ].apply(pd.Timedelta)
+            self.case_lab_association_df = case_lab_association_df.astype(
                 {
+                    "LastPositiveCovidInterval": "timedelta64[ns]",
                     "LabCaseIntervalCategory": self.covid_case_interval_category,
                     "LabCaseIntervalCategory2": self.covid_case_interval_category2,
                 }
             )
-            case_lab_association_df["LastPostitiveCovidInterval"] = (
-                case_lab_association_df["LastPositiveCovidInterval"]
-                .apply(pd.Timedelta)
-                .astype("timedelta64[ns]")
-            )
-            self.case_lab_association_df = case_lab_association_df
         except FileNotFoundError:
             if not isinstance(labs_df, pd.DataFrame):
                 raise ValueError("Must provide argument `labs_df`.")
