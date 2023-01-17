@@ -34,10 +34,11 @@ labs_df = lab_data()
 case_data = CaseData(cases_df=cases_path)
 case_data.associate_labs_to_cases(labs_df=labs_df)
 cases_df = case_data()
-
+# Get only patients with a positive Preop COVID test
+cases_with_positive_preop_covid = cases_df[cases_df.HasPositivePreopCovidTest]
 #%% [markdown]
 # ## Lab Case Interval Definitions
-# #%%
+#%%
 # 1-week Intervals
 cases_df.LabCaseIntervalCategory.value_counts()
 # Never        34307
@@ -65,10 +66,10 @@ cases_df.LabCaseIntervalCategory2.value_counts()
 #%%
 # Number of patienst that have had a positive SARS-CoV-2 PCR test
 cases_df.HasPositivePreopCovidTest.value_counts()
-
+# False    34307
+# True       996
+# Name: HasPositivePreopCovidTest, dtype: int64
 #%%
-# Get only patients with a positive Preop COVID test
-cases_with_positive_preop_covid = cases_df[cases_df.HasPositivePreopCovidTest]
 # Distribution of time of last positive COVID test until Surgery Case
 cases_with_positive_preop_covid.LastPositiveCovidInterval.describe()
 # count                           996
@@ -282,8 +283,491 @@ ax.set(
     xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
     ylabel="Post-op Length of Stay (days)",
 )
+#%% [markdown]
+# ## Comorbidities (by Elixhauser & MPOG definitions)
+# MPOG dataset says that these are taken from ICD billing codes and cannot confirm
+# the time point at which they are present--i.e. we do not know if these are present
+# pre-operatively vs. post-operatively and if this is a new diagnosis
+#%%
+# Elixhauser Cardiac Arrhythmias
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserCardiacArrhythmias,
+    stat="percent",
+    multiple="fill",
+    ax=ax[0],
+)
+ax[0].set(
+    title="Elixhauser Cardiac Arrhythmias for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
 
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserCardiacArrhythmias,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="Elixhauser Cardiac Arrhythmias for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
+#%%
+# Elixhauser Chronic Pulmonary Disease
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserChronicPulmonaryDisease,
+    stat="percent",
+    multiple="fill",
+    ax=ax[0],
+)
+ax[0].set(
+    title="Elixhauser Chronic Pulmonary Disease for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
 
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserChronicPulmonaryDisease,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="Elixhauser Chronic Pulmonary Disease for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
+#%%
+# Elixhauser Congestive Heart Failure
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserCongestiveHeartFailure,
+    stat="percent",
+    multiple="fill",
+    ax=ax[0],
+)
+ax[0].set(
+    title="Elixhauser Congestive Heart Failure for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
+
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserCongestiveHeartFailure,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="Elixhauser Congestive Heart Failure for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
+#%%
+# Elixhauser Diabetes Complicated
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserDiabetesComplicated,
+    stat="percent",
+    multiple="fill",
+    ax=ax[0],
+)
+ax[0].set(
+    title="Elixhauser Diabetes Complicated for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
+
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserDiabetesComplicated,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="Elixhauser Diabetes Complicated for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
+#%%
+# Elixhauser Diabetes Uncomplicated
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserDiabetesUncomplicated,
+    stat="percent",
+    multiple="fill",
+    ax=ax[0],
+)
+ax[0].set(
+    title="Elixhauser Diabetes Uncomplicated for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
+
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserDiabetesUncomplicated,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="Elixhauser Diabetes Uncomplicated for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
+#%%
+# Elixhauser Hypertension Complicated
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserHypertensionComplicated,
+    stat="percent",
+    multiple="fill",
+    ax=ax[0],
+)
+ax[0].set(
+    title="Elixhauser Hypertension Complicated for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
+
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserHypertensionComplicated,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="Elixhauser Hypertension Complicated for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
+#%%
+# Elixhauser Hypertension Uncomplicated
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserHypertensionUncomplicated,
+    stat="percent",
+    multiple="fill",
+    ax=ax[0],
+)
+ax[0].set(
+    title="Elixhauser Hypertension Uncomplicated for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
+
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserHypertensionUncomplicated,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="Elixhauser Hypertension Uncomplicated for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
+#%%
+# Elixhauser Liver Disease
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserLiverDisease,
+    stat="percent",
+    multiple="fill",
+    ax=ax[0],
+)
+ax[0].set(
+    title="Elixhauser Liver Disease for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
+
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserLiverDisease,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="Elixhauser Liver Disease for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
+#%%
+# Elixhauser Metastatic Cancer
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserMetastaticCancer,
+    stat="percent",
+    multiple="fill",
+    ax=ax[0],
+)
+ax[0].set(
+    title="Elixhauser Metastatic Cancer for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
+
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserMetastaticCancer,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="Elixhauser Metastatic Cancer for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
+#%%
+# Elixhauser Obesity
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserObesity,
+    stat="percent",
+    multiple="fill",
+    ax=ax[0],
+)
+ax[0].set(
+    title="Elixhauser Obesity for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
+
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserObesity,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="Elixhauser Obesity for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
+#%%
+# Elixhauser Peripheral Vascular Disorders
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserPeripheralVascularDisorders,
+    stat="percent",
+    multiple="fill",
+    ax=ax[0],
+)
+ax[0].set(
+    title="Elixhauser Peripheral Vascular Disorders for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
+
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserPeripheralVascularDisorders,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="Elixhauser Peripheral Vascular Disorders for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
+#%%
+# Elixhauser Pulmonary Circulation Disorders
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserPulmonaryCirculationDisorders,
+    stat="percent",
+    multiple="fill",
+    ax=ax[0],
+)
+ax[0].set(
+    title="Elixhauser Pulmonary Circulation Disorders for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
+
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserPulmonaryCirculationDisorders,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="Elixhauser Pulmonary Circulation Disorders for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
+#%%
+# Elixhauser Renal Failure
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserRenalFailure,
+    stat="percent",
+    multiple="fill",
+    ax=ax[0],
+)
+ax[0].set(
+    title="Elixhauser Renal Failure for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
+
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserRenalFailure,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="Elixhauser Renal Failure for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
+#%%
+# Elixhauser Valvular Disease
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserValvularDisease,
+    stat="percent",
+    multiple="fill",
+    ax=ax[0],
+)
+ax[0].set(
+    title="Elixhauser Valvular Disease for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
+
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityElixhauserValvularDisease,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="Elixhauser Valvular Disease for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
+#%%
+# MPOG Cerebrovascular Disease
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityMpogCerebrovascularDisease,
+    stat="percent",
+    multiple="fill",
+    ax=ax[0],
+)
+ax[0].set(
+    title="MPOG Cerebrovascular Disease for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
+
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityMpogCerebrovascularDisease,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="MPOG Cerebrovascular Disease for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
+#%%
+# MPOG Coronary Artery Disease
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityMpogCoronaryArteryDisease,
+    stat="percent",
+    multiple="fill",
+    ax=ax[0],
+)
+ax[0].set(
+    title="MPOG Coronary Artery Disease for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[0].containers:
+    ax[0].bar_label(x, label_type="center", fmt="%.2f")
+
+sns.histplot(
+    x=cases_with_positive_preop_covid.LabCaseIntervalCategory2,
+    hue=cases_with_positive_preop_covid.ComorbidityMpogCoronaryArteryDisease,
+    stat="count",
+    multiple="dodge",
+    ax=ax[1],
+)
+ax[1].set(
+    title="MPOG Coronary Artery Disease for Pre-op COVID Category",
+    xlabel="Last Positive SARS-CoV-2 PCR+ prior to Procedure",
+)
+for x in ax[1].containers:
+    ax[1].bar_label(x, label_type="edge", fmt="%g")
 #%% [markdown]
 # ## Post-op Complications (by MPOG and AHRQ definitions)
 # Presumed that this records only new post-op complications, but MPOG phenotypes do not
@@ -410,16 +894,7 @@ for x in ax[1].containers:
     ax[1].bar_label(x, label_type="edge", fmt="%g")
 #%%
 # TODO:
-
-# 3. get data on whether patient has date of COVID vaccinations (full vs booster)
+# One more possible stratification:
+# Get data on whether patient has date of COVID vaccinations (full vs booster)
 #   - bool: vaccinated or not?
 #   - time since last vaccination or booster?
-
-# Outcomes
-# 1. explore comorbidity index <-- export in Cases Table
-# 2. PACU duration - done
-# 3. Post-op Length of Stay - done
-# 4. 30-day hospital mortality - done
-
-
-# %%
