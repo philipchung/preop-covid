@@ -1,0 +1,37 @@
+%YAML 1.2
+---
+positive_values:
+- detected
+- positive
+- pos
+- reactive
+negative_values:
+- none detected
+- none detected.
+- not detected
+- negative
+- negative.
+- neg
+- nonreactive
+unknown_values:
+- inconclusive
+- duplicate request
+- cancel order changed
+- cancel see detail
+- canceled by practitioner
+- wrong test ordered by practitioner
+- wrong test selected by uw laboratory
+- specimen not labeled
+- data entry correction see updated information
+- data entry correction for lab automation processing. do not re-order in cpoe.
+- reorder requested label error
+- reorder requested improper tube/sample type
+- reorder requested sample lost
+- reorder requested sample problem
+- reorder requested collection problem   
+- reorder requested. no sample received.
+- follow-up testing required. sample recollection requested.
+- follow-up testing required. refer to other sars-cov-2 qualitative pcr result on specimen with similar collection date and time.
+- please see patient's medical record for results.   lab ordered is the same as other provider's request.
+- test added to previous lab request.
+- ylbl  rn [phi] notified

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
+import yaml
 from pandas.api.types import CategoricalDtype
 from utils import create_uuid, read_pandas
 
@@ -19,13 +20,29 @@ class LabData:
     covid_lab_result_category: CategoricalDtype = CategoricalDtype(
         categories=["Negative", "Positive", "Unknown"], ordered=False
     )
+    data_version: int = 2
+    covid_lab_values_map: dict = field(default_factory=dict)
+    covid_lab_values_map_path: str | Path = Path(__file__).parent / "covid_lab_values_map.yml"
 
     def __post_init__(self) -> None:
         "Called upon object instance creation."
         # If path passed into labs_df argument, load dataframe from path
         if isinstance(self.labs_df, str | Path):
             df = read_pandas(self.labs_df)
+        # Normalize headers from space-separated words to underscore-separated
+        df.columns = [col_title.replace(" ", "_") for col_title in df.columns]
         self.raw_labs_df = copy.deepcopy(df)
+        # Load mapping of raw to cleaned covid lab values
+        if not self.covid_lab_values_map:
+            try:
+                self.covid_lab_values_map = yaml.safe_load(
+                    Path(self.covid_lab_values_map_path).read_text()
+                )
+            except Exception:
+                raise ValueError(
+                    "Must provide either `covid_lab_values_map` or `covid_lab_values_map_path`."
+                )
+        # Format Lab Vales
         self.labs_df = self.format_labs_df(df)
 
     def __call__(self) -> pd.DataFrame:
@@ -44,7 +61,7 @@ class LabData:
             pd.DataFrame: transformed output dataframe
         """
         # Create UUID for each Lab Value based on MPOG Patient ID, Lab Concept ID, Lab DateTime.
-        # If there are any duplicated UUIDS, this means the row entry has the same value for all 3 of these.
+        # If there are any duplicated UUIDS, the row entry has the same value for all 3 of these.
         _df = copy.deepcopy(labs_df)
         lab_uuid = _df.apply(
             lambda row: create_uuid(
@@ -59,9 +76,16 @@ class LabData:
             self.covid_lab_result_category
         )
         # Format String date into DateTime object
-        lab_datetime = _df.AIMS_Lab_Observation_DT.apply(
-            lambda s: datetime.strptime(s, r"%Y-%m-%d %H:%M:%S")
-        )
+        if self.data_version == 1:
+            lab_datetime = _df.AIMS_Lab_Observation_DT.apply(
+                lambda s: datetime.strptime(s, r"%Y-%m-%d %H:%M:%S")
+            )
+        elif self.data_version == 2:
+            lab_datetime = _df.AIMS_Lab_Observation_DT.apply(
+                lambda s: datetime.strptime(s, r"%m/%d/%y %H:%M")
+            )
+        else:
+            raise ValueError("Unknown String DateTime Format in `AIMS_Lab_Observation_DT`.")
         # Notes:
         # - Drop "AIMS_Value_Numeric" and "AIMS_Value_CD" columns because they have no
         # information and are all `nan` values.
@@ -84,42 +108,15 @@ class LabData:
 
     def clean_covid_result_value(self, value: str) -> str:
         """Converts result values into Categorical value Positive, Negative, Unknown."""
-        positive_values = ["Detected", "POSITIVE", "POS", "detected"]
-        negative_values = [
-            "None detected",
-            "NEGATIVE",
-            "NEG",
-            "Negative",
-            "Not detected",
-            "neg",
-            "None Detected",
-            "negative",
-        ]
-        unknown_values = [
-            "Inconclusive",
-            "Duplicate request",
-            "Cancel order changed",
-            "Reorder requested label error",
-            "Wrong test ordered by practitioner",
-            "Canceled by practitioner",
-            "Follow-up testing required. Sample recollection requested.",
-            "Specimen not labeled",
-            "Reorder requested improper tube/sample type",
-            "Data entry correction see updated information",
-            "Reorder requested sample lost",
-            "Reorder requested sample problem",
-            "Wrong test selected by UW laboratory",
-            "Reorder requested. No sample received.",
-            "Follow-up testing required. Refer to other SARS-CoV-2 Qualitative PCR result on specimen with similar collection date and time.",  # noqa:E501
-            "Cancel see detail",
-        ]
-        if value.lower() in [x.lower() for x in positive_values]:
+        value = value.lower().strip()
+        if value in [x.lower() for x in self.covid_lab_values_map["positive_values"]]:
             return "Positive"
-        elif value.lower() in [x.lower() for x in negative_values]:
+        elif value in [x.lower() for x in self.covid_lab_values_map["negative_values"]]:
             return "Negative"
-        elif value.lower() in [x.lower() for x in unknown_values]:
+        elif value in [x.lower() for x in self.covid_lab_values_map["unknown_values"]]:
             return "Unknown"
         else:
             raise ValueError(
-                f"Unknown value {value} encountered that is not handled by clean_covid_result_value() logic."
+                f"Unknown value {value} encountered that is not handled by "
+                "clean_covid_result_value() logic."
             )
