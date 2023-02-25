@@ -1,0 +1,13 @@
+%YAML 1.2
+---
+covid-19_vaccine:
+- covid-19 vaccine
+influenza_vaccine:
+- influenza vaccine
+- influenza (inactivated) (sept-march)
+- zzzinfluenza vaccine
+- zzzob influenza vaccine
+- zzzinfluenza >9 yrs
+- zzzob-influenza vaccine,revised
+other:
+- haemophilus influenzae type b

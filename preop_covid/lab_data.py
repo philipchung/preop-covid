@@ -107,7 +107,14 @@ class LabData:
         return output_df
 
     def clean_covid_result_value(self, value: str) -> str:
-        """Converts result values into Categorical value Positive, Negative, Unknown."""
+        """Converts covid result value field into Categorical value.
+
+        Args:
+            value (str): string value for HMTopic field
+
+        Returns:
+            str: "Positive", "Negative", "Unknown"
+        """
         value = value.lower().strip()
         if value in [x.lower() for x in self.covid_lab_values_map["positive_values"]]:
             return "Positive"
