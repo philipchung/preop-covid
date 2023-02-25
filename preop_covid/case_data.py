@@ -19,6 +19,7 @@ class CaseData:
 
     cases_df: pd.DataFrame
     raw_cases_df: pd.DataFrame = None
+    data_version: int | float = 1.1
     project_dir: str | Path = Path(__file__).parent.parent
     processed_case_lab_association_path: Optional[str | Path] = None
     case_lab_association_df: Optional[pd.DataFrame] = None
@@ -62,7 +63,7 @@ class CaseData:
 
         # Set Default Data Directories and Paths
         self.project_dir = Path(self.project_dir)
-        self.data_dir = self.project_dir / "data" / "v1"
+        self.data_dir = self.project_dir / "data" / "v1.1"
         if self.processed_case_lab_association_path is None:
             self.processed_case_lab_association_path = (
                 self.data_dir / "processed" / "case_associated_covid_labs.parquet"
@@ -84,6 +85,8 @@ class CaseData:
             pd.DataFrame: transformed output dataframe
         """
         _df = copy.deepcopy(cases_df)
+        _df.MPOG_Case_ID = _df.MPOG_Case_ID.str.upper()
+        _df.MPOG_Patient_ID = _df.MPOG_Patient_ID.str.upper()
         # Set MPOG_Case_ID as primary index
         _df = _df.set_index("MPOG_Case_ID")
 
@@ -180,7 +183,7 @@ class CaseData:
             "ComorbidityMpogCoronaryArteryDisease_Value_Code",
         ]
         comorbidities = elixhauser_comorbidities + mpog_comorbidities
-        # Drop Cases that do not have ICD Codes documented for comorbidities, then convert to boolean
+        # Drop Cases without ICD Codes documented for comorbidities, then convert to boolean
         comorbidities_df = (
             _df.loc[:, comorbidities]
             .applymap(self.booleanize_comorbidity)
@@ -367,8 +370,8 @@ class CaseData:
 
     def categorize_duration(self, duration: timedelta) -> str | None:
         """Creates buckets of duration similar to how COVIDSurg 2021 paper did it.
-        'Timing of surgery following SARS-CoV-2 infection: an international prospective cohort study'
-        (https://pubmed.ncbi.nlm.nih.gov/33690889/)
+        'Timing of surgery following SARS-CoV-2 infection: an international prospective
+        cohort study' (https://pubmed.ncbi.nlm.nih.gov/33690889/)
 
         Create 1-week intervals.
 
@@ -402,8 +405,8 @@ class CaseData:
 
     def categorize_duration2(self, duration: timedelta) -> str | None:
         """Creates buckets of duration similar to how COVIDSurg 2021 paper did it.
-        'Timing of surgery following SARS-CoV-2 infection: an international prospective cohort study'
-        (https://pubmed.ncbi.nlm.nih.gov/33690889/)
+        'Timing of surgery following SARS-CoV-2 infection: an international prospective
+        cohort study' (https://pubmed.ncbi.nlm.nih.gov/33690889/)
 
         Creates 2-week intervals.
 

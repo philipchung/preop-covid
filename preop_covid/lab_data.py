@@ -20,7 +20,7 @@ class LabData:
     covid_lab_result_category: CategoricalDtype = CategoricalDtype(
         categories=["Negative", "Positive", "Unknown"], ordered=False
     )
-    data_version: int = 2
+    data_version: int | float = 1.1
     covid_lab_values_map: dict = field(default_factory=dict)
     covid_lab_values_map_path: str | Path = Path(__file__).parent / "covid_lab_values_map.yml"
 
@@ -80,7 +80,7 @@ class LabData:
             lab_datetime = _df.AIMS_Lab_Observation_DT.apply(
                 lambda s: datetime.strptime(s, r"%Y-%m-%d %H:%M:%S")
             )
-        elif self.data_version == 2:
+        elif self.data_version in (1.1, 2):
             lab_datetime = _df.AIMS_Lab_Observation_DT.apply(
                 lambda s: datetime.strptime(s, r"%m/%d/%y %H:%M")
             )

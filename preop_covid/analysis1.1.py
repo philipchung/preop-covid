@@ -32,14 +32,29 @@ labs_df = lab_data()
 
 # Load & Clean Cases Data
 case_data = CaseData(cases_df=cases_path)
+cases_df = case_data()
+
+#%%
+mpog_patient_id, case_df = next(iter(case_data.cases_df.groupby("MPOG_Patient_ID")))
+labs = labs_df.loc[labs_df.MPOG_Patient_ID == mpog_patient_id].sort_values(
+    by="DateTime", ascending=True
+)
+case = case_df.iloc[0, :]
+res = case_data.last_covid_lab_before_case(
+    labs_df=labs, mpog_patient_id=mpog_patient_id, case_start=case.AnesStart
+)
+
+#%%
+# Associate Labs from each Patient to Cases for each PAtient
 case_data.associate_labs_to_cases(labs_df=labs_df)
 cases_df = case_data()
 # Get only patients with a positive Preop COVID test
 cases_with_positive_preop_covid = cases_df[cases_df.HasPositivePreopCovidTest]
 
 #%%
-# Get ROS Table
+# Load ROS Table
 ros_df = pd.read_csv(ros_path, encoding="latin1")
-# Get Health Maintenance / Vaccine Table
+# Load Health Maintenance / Vaccine Table
 hm_df = pd.read_csv(hm_path)
+# %%
 # %%
