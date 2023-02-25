@@ -7,7 +7,7 @@ import pandas as pd
 def read_pandas(path: str | Path) -> pd.DataFrame:
     path = Path(path)
     if path.suffix == ".csv":
-        return pd.read_csv(path)
+        return pd.read_csv(path, low_memory=False)
     elif path.suffix == ".parquet":
         return pd.read_parquet(path)
     else:
