@@ -19,7 +19,7 @@ class CaseData:
 
     cases_df: pd.DataFrame
     raw_cases_df: pd.DataFrame = None
-    data_version: int | float = 1.1
+    data_version: int | float = 2
     project_dir: str | Path = Path(__file__).parent.parent
     processed_case_lab_association_path: Optional[str | Path] = None
     case_lab_association_df: Optional[pd.DataFrame] = None
@@ -63,7 +63,7 @@ class CaseData:
 
         # Set Default Data Directories and Paths
         self.project_dir = Path(self.project_dir)
-        self.data_dir = self.project_dir / "data" / "v1.1"
+        self.data_dir = self.project_dir / "data" / f"v{int(self.data_version)}"
         if self.processed_case_lab_association_path is None:
             self.processed_case_lab_association_path = (
                 self.data_dir / "processed" / "case_associated_covid_labs.parquet"
@@ -312,10 +312,12 @@ class CaseData:
             raise ValueError(
                 "Must supply either `labs_df` or `processed_case_lab_association_path` args."
             )
-        if processed_case_lab_association_path:
+        if processed_case_lab_association_path is not None:
             self.processed_case_lab_association_path = processed_case_lab_association_path
+            print("reached a")
         try:
             # Load cached result from disk, convert durations/intervals to timedelta
+            print("b")
             case_lab_association_df = read_pandas(self.processed_case_lab_association_path)
             case_lab_association_df["LastPostitiveCovidInterval"] = case_lab_association_df[
                 "LastPositiveCovidInterval"
