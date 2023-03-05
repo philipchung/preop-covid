@@ -317,10 +317,8 @@ class CaseData:
             )
         if processed_case_lab_association_path is not None:
             self.processed_case_lab_association_path = processed_case_lab_association_path
-            print("reached a")
         try:
             # Load cached result from disk, convert durations/intervals to timedelta
-            print("b")
             case_lab_association_df = read_pandas(self.processed_case_lab_association_path)
             case_lab_association_df["LastPostitiveCovidInterval"] = case_lab_association_df[
                 "LastPositiveCovidInterval"

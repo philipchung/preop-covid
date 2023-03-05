@@ -21,6 +21,7 @@ class VaccineData:
     data_version: int = 2
     project_dir: str | Path = Path(__file__).parent.parent
     data_dir: Optional[str | Path] = None
+    cleaned_vaccines_df_path: Optional[str | Path] = None
     health_maintenance_map: pd.DataFrame = field(default_factory=dict)
     health_maintenance_map_path: str | Path = (
         Path(__file__).parent / "health_maintenance_values_map.yml"
@@ -52,6 +53,10 @@ class VaccineData:
             self.data_dir = self.project_dir / "data" / f"v{self.data_version}"
         else:
             self.data_dir = Path(self.data_dir)
+        if self.cleaned_vaccines_df_path is None:
+            self.cleaned_vaccines_df_path = (
+                self.data_dir / "processed" / "cleaned_vaccines_df_path.parquet"
+            )
 
         # Load mapping of health maintenance categories used to sort vaccine category
         if not self.health_maintenance_map:
@@ -117,51 +122,69 @@ class VaccineData:
         _df = _df.loc[
             :, ["VaccineUUID", "MPOG_Patient_ID", "HM_HX_DATE", "COMMENTS", "VaccineType"]
         ]
-        # Unfortunately we can't uniquify based on VaccineUUID yet at this point.
-        # There are some vaccine COMMENTS for flu vaccine that are different even though
-        # the administration date is the same.  We can't drop COMMENTS yet because we
-        # need them to further categorize COVID-19 vaccine.
 
-        # Isolate Flu Vaccines
-        _flu_df = _df.loc[_df.VaccineType == "Influenza"].copy()
-        _flu_df = _flu_df.assign(VaccineKind="Influenza")
-        # Uniquify based on VaccineUUID, then use it as index
-        _flu_df = (
-            _flu_df.drop_duplicates(subset="VaccineUUID")
-            .drop(columns="COMMENTS")
-            .set_index("VaccineUUID")
-        )
-        self.flu_vaccines_df = _flu_df
+        # Try to load cached data if it exists
+        try:
+            vaccines_df = pd.read_parquet(self.cleaned_vaccines_df_path)
+            # Check to see if same VaccineUUIDs
+            assert set(vaccines_df.index.tolist()) == set(_df["VaccineUUID"].tolist())
+            # If pass, then we can use the cached result
+            self.vaccines_df = vaccines_df
+            self.flu_vaccines_df = vaccines_df.loc[vaccines_df.VaccineType == "Influenza"]
+            self.covid_vaccines_df = vaccines_df.loc[vaccines_df.VaccineType == "COVID-19"]
+            return self.vaccines_df
+        except FileNotFoundError:
+            # No cached file, so we need to cleanup the vaccine data
 
-        # Isolate & Further Clean/Format COVID-19
-        _covid_df = _df.loc[_df.VaccineType == "COVID-19"].copy()
-        # Use regex to split string
-        tqdm.pandas(desc="Parsing Covid Vaccine Comments")
-        self.covid_matches = pd.DataFrame(
-            _covid_df.COMMENTS.progress_apply(self.parse_covid_vaccine_comments).tolist()
-        )
-        # Clean trailing characters that are sometimes present
-        self.covid_matches.Vaccine = self.covid_matches.Vaccine.str.rstrip("\x11\x110").str.strip()
-        # Categorize Vaccine Kind (e.g. Moderna, Pfizer, etc.)
-        fn = partial(
-            categorize_covid_vaccine_kind, covid_vaccine_codes_df=self.covid_vaccine_codes_df
-        )
-        result = parallel_process(
-            iterable=self.covid_matches.Vaccine,
-            function=fn,
-            desc="Categorizing Covid Vaccine Kind",
-        )
-        _covid_df = _covid_df.assign(VaccineKind=result)
-        # Uniquify based on VaccineUUID, then use it as index
-        _covid_df = (
-            _covid_df.drop_duplicates(subset="VaccineUUID")
-            .drop(columns="COMMENTS")
-            .set_index("VaccineUUID")
-        )
-        self.covid_vaccines_df = _covid_df
+            # Unfortunately we can't uniquify based on VaccineUUID yet at this point.
+            # There are some vaccine COMMENTS for flu vaccine that are different even though
+            # the administration date is the same.  We can't drop COMMENTS yet because we
+            # need them to further categorize COVID-19 vaccine.
 
-        # Combined Vaccine Table
-        self.vaccines_df = pd.concat([_flu_df, _covid_df], axis=0)
+            # Isolate Flu Vaccines
+            _flu_df = _df.loc[_df.VaccineType == "Influenza"].copy()
+            _flu_df = _flu_df.assign(VaccineKind="Influenza")
+            # Uniquify based on VaccineUUID, then use it as index
+            _flu_df = (
+                _flu_df.drop_duplicates(subset="VaccineUUID")
+                .drop(columns="COMMENTS")
+                .set_index("VaccineUUID")
+            )
+            self.flu_vaccines_df = _flu_df
+
+            # Isolate & Further Clean/Format COVID-19
+            _covid_df = _df.loc[_df.VaccineType == "COVID-19"].copy()
+            # Use regex to split string
+            tqdm.pandas(desc="Parsing Covid Vaccine Comments")
+            self.covid_matches = pd.DataFrame(
+                _covid_df.COMMENTS.progress_apply(self.parse_covid_vaccine_comments).tolist()
+            )
+            # Clean trailing characters that are sometimes present
+            self.covid_matches.Vaccine = self.covid_matches.Vaccine.str.rstrip(
+                "\x11\x110"
+            ).str.strip()
+            # Categorize Vaccine Kind (e.g. Moderna, Pfizer, etc.)
+            fn = partial(
+                categorize_covid_vaccine_kind, covid_vaccine_codes_df=self.covid_vaccine_codes_df
+            )
+            result = parallel_process(
+                iterable=self.covid_matches.Vaccine,
+                function=fn,
+                desc="Categorizing Covid Vaccine Kind",
+            )
+            _covid_df = _covid_df.assign(VaccineKind=result)
+            # Uniquify based on VaccineUUID, then use it as index
+            _covid_df = (
+                _covid_df.drop_duplicates(subset="VaccineUUID")
+                .drop(columns="COMMENTS")
+                .set_index("VaccineUUID")
+            )
+            self.covid_vaccines_df = _covid_df
+
+            # Combined Vaccine Table
+            self.vaccines_df = pd.concat([_flu_df, _covid_df], axis=0)
+            # Cache Result to Disk
+            self.vaccines_df.to_parquet(self.cleaned_vaccines_df_path)
         return self.vaccines_df
 
     def clean_hm_topic_value(self, value: str) -> str:
