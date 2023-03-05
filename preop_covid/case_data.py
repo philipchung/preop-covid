@@ -1,6 +1,3 @@
-from __future__ import annotations
-
-import copy
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -19,8 +16,9 @@ class CaseData:
 
     cases_df: pd.DataFrame
     raw_cases_df: pd.DataFrame = None
-    data_version: int | float = 2
+    data_version: int = 2
     project_dir: str | Path = Path(__file__).parent.parent
+    data_dir: Optional[str | Path] = None
     processed_case_lab_association_path: Optional[str | Path] = None
     case_lab_association_df: Optional[pd.DataFrame] = None
     admission_type_category = CategoricalDtype(
@@ -55,19 +53,24 @@ class CaseData:
 
     def __post_init__(self) -> pd.DataFrame:
         "Called upon object instance creation."
-        # If path passed into cases_df argument, load dataframe from path
-        if isinstance(self.cases_df, str | Path):
-            df = read_pandas(self.cases_df)
-        self.raw_cases_df = copy.deepcopy(df)
-        self.cases_df = self.format_cases_df(df)
-
         # Set Default Data Directories and Paths
         self.project_dir = Path(self.project_dir)
-        self.data_dir = self.project_dir / "data" / f"v{int(self.data_version)}"
+        if self.data_dir is None:
+            self.data_dir = self.project_dir / "data" / f"v{self.data_version}"
+        else:
+            self.data_dir = Path(self.data_dir)
         if self.processed_case_lab_association_path is None:
             self.processed_case_lab_association_path = (
                 self.data_dir / "processed" / "case_associated_covid_labs.parquet"
             )
+
+        # If path passed into cases_df argument, load dataframe from path
+        if isinstance(self.cases_df, str | Path):
+            df = read_pandas(self.cases_df)
+        self.raw_cases_df = df.copy()
+
+        # Format Cases Data
+        self.cases_df = self.format_cases_df(df)
 
     def __call__(self) -> pd.DataFrame:
         return self.cases_df
@@ -84,7 +87,7 @@ class CaseData:
         Returns:
             pd.DataFrame: transformed output dataframe
         """
-        _df = copy.deepcopy(cases_df)
+        _df = cases_df.copy()
         _df.MPOG_Case_ID = _df.MPOG_Case_ID.str.upper()
         _df.MPOG_Patient_ID = _df.MPOG_Patient_ID.str.upper()
         # Set MPOG_Case_ID as primary index
@@ -360,7 +363,7 @@ class CaseData:
                 }
             )
             # Cache result on disk, convert timedelta to durations/intervals
-            case_lab_association_df = copy.deepcopy(self.case_lab_association_df)
+            case_lab_association_df = self.case_lab_association_df.copy()
             case_lab_association_df["LastPositiveCovidInterval"] = case_lab_association_df[
                 "LastPositiveCovidInterval"
             ].apply(lambda x: x.isoformat())

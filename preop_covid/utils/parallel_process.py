@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import multiprocessing
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import cpu_count
 from typing import Callable, Iterable, Union
@@ -14,6 +15,7 @@ def parallel_process(
     use_args: bool = False,
     use_kwargs: bool = False,
     desc: str = "",
+    force_use_fork: bool = True,
 ) -> list:
     """
     A parallel version of the map function with a progress bar.
@@ -25,7 +27,7 @@ def parallel_process(
             within the function must be pickle-able.  Note that only this function has
             this requirement and the calling scope for `parallel_process` can be
             embedded within another function or class.
-        n_jobs (int, default=16): The number of cores to use
+        n_jobs (int): The number of cores to use
         use_args (boolean, default=False): Whether to consider the elements of array
             as tuples of arguments to function. Tuple elements are passed to function
             arguments by position.  Set this to True if function has multiple arguments
@@ -35,9 +37,12 @@ def parallel_process(
             True if function has multiple arguments and you want to pass arguments to
             function by keyword (does not need to be in-order).
         desc (string, default=""): Description on progress bar
+        force_use_fork (bool): whether to force multiprocessing to use fork start method
     Returns:
         [function(iterable[0]), function(iterable[1]), ...]
     """
+    if force_use_fork:
+        mp_fork = multiprocessing.get_context("fork")
     # If we set n_jobs to 1, just run a list comprehension.
     # This is useful for benchmarking and debugging.
     if n_jobs == 1:
@@ -48,7 +53,7 @@ def parallel_process(
         else:
             return [function(a) for a in tqdm(iterable)]
     # Assemble the workers
-    with ProcessPoolExecutor(max_workers=n_jobs) as pool:
+    with ProcessPoolExecutor(max_workers=n_jobs, mp_context=mp_fork) as pool:
         # Pass the elements of array into function
         if use_kwargs:
             futures = [pool.submit(function, **a) for a in iterable]

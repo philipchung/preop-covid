@@ -1,9 +1,7 @@
-from __future__ import annotations
-
-import copy
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 import yaml
@@ -17,21 +15,24 @@ class LabData:
 
     labs_df: str | Path | pd.DataFrame
     raw_labs_df: pd.DataFrame = None
+    data_version: int = 2
+    project_dir: str | Path = Path(__file__).parent.parent
+    data_dir: Optional[str | Path] = None
     covid_lab_result_category: CategoricalDtype = CategoricalDtype(
         categories=["Negative", "Positive", "Unknown"], ordered=False
     )
-    data_version: int | float = 2
     covid_lab_values_map: dict = field(default_factory=dict)
     covid_lab_values_map_path: str | Path = Path(__file__).parent / "covid_lab_values_map.yml"
 
     def __post_init__(self) -> None:
         "Called upon object instance creation."
-        # If path passed into labs_df argument, load dataframe from path
-        if isinstance(self.labs_df, str | Path):
-            df = read_pandas(self.labs_df)
-        # Normalize headers from space-separated words to underscore-separated
-        df.columns = [col_title.replace(" ", "_") for col_title in df.columns]
-        self.raw_labs_df = copy.deepcopy(df)
+        # Set Default Data Directories and Paths
+        self.project_dir = Path(self.project_dir)
+        if self.data_dir is None:
+            self.data_dir = self.project_dir / "data" / f"v{self.data_version}"
+        else:
+            self.data_dir = Path(self.data_dir)
+
         # Load mapping of raw to cleaned covid lab values
         if not self.covid_lab_values_map:
             try:
@@ -42,7 +43,15 @@ class LabData:
                 raise ValueError(
                     "Must provide either `covid_lab_values_map` or `covid_lab_values_map_path`."
                 )
-        # Format Lab Vales
+
+        # If path passed into labs_df argument, load dataframe from path
+        if isinstance(self.labs_df, str | Path):
+            df = read_pandas(self.labs_df)
+        # Normalize headers from space-separated words to underscore-separated
+        df.columns = [col_title.replace(" ", "_") for col_title in df.columns]
+        self.raw_labs_df = df.copy()
+
+        # Format Lab Data
         self.labs_df = self.format_labs_df(df)
 
     def __call__(self) -> pd.DataFrame:
@@ -62,7 +71,7 @@ class LabData:
         """
         # Create UUID for each Lab Value based on MPOG Patient ID, Lab Concept ID, Lab DateTime.
         # If there are any duplicated UUIDS, the row entry has the same value for all 3 of these.
-        _df = copy.deepcopy(labs_df)
+        _df = labs_df.copy()
         lab_uuid = _df.apply(
             lambda row: create_uuid(
                 str(row.MPOG_Patient_ID)
