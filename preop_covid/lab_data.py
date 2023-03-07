@@ -47,9 +47,9 @@ class LabData:
         # If path passed into labs_df argument, load dataframe from path
         if isinstance(self.labs_df, str | Path):
             df = read_pandas(self.labs_df)
-        # Normalize headers from space-separated words to underscore-separated
-        df.columns = [col_title.replace(" ", "_") for col_title in df.columns]
-        self.raw_labs_df = df.copy()
+            # Normalize headers from space-separated words to underscore-separated
+            df.columns = [col_title.replace(" ", "_") for col_title in df.columns]
+            self.raw_labs_df = df.copy()
 
         # Format Lab Data
         self.labs_df = self.format_labs_df(df)

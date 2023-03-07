@@ -67,7 +67,7 @@ class CaseData:
         # If path passed into cases_df argument, load dataframe from path
         if isinstance(self.cases_df, str | Path):
             df = read_pandas(self.cases_df)
-        self.raw_cases_df = df.copy()
+            self.raw_cases_df = df.copy()
 
         # Format Cases Data
         self.cases_df = self.format_cases_df(df)

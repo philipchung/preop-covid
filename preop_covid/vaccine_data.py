@@ -81,7 +81,7 @@ class VaccineData:
         # If path passed into vaccine_df argument, load dataframe from path
         if isinstance(self.vaccines_df, str | Path):
             df = read_pandas(self.vaccines_df)
-        self.raw_vaccines_df = df.copy()
+            self.raw_vaccines_df = df.copy()
 
         # Format Vaccines Data
         self.vaccines_df = self.format_vaccines_df(df)
