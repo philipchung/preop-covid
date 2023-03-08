@@ -45,42 +45,6 @@ vaccine_data = VaccineData(vaccines_df=hm_path, data_version=data_version)
 #%%
 # Load & Clean SmartDataElements Data
 preop_data = PreopData(preop_df=preop_smartdataelements_path, data_version=data_version)
-preop_df = preop_data.preop_df
-ros_df = preop_data.ros_df
 problems_df = preop_data.problems_df
-#%%
-neg_ros_df = ros_df.loc[ros_df.SmartDataElement.str.contains("NEG")]
-pos_ros_df = ros_df.loc[~ros_df.SmartDataElement.str.contains("NEG")]
-#%%
-neg_ros_df.loc[:, ["SmartDataElement", "SmartDataAbbrev", "SmartElemValue"]].value_counts()
-#%%
-pos_ros_df.loc[:, ["SmartDataElement", "SmartDataAbbrev", "SmartElemValue"]].value_counts()
-#%%
 
-pos_ros_df.SmartDataElement.unique().tolist()
-# ['WORKFLOW - ROS - ROS MUSCULOSKELETAL COMMENTS',
-#  'WORKFLOW - ROS - NEURO/PSYCH TITLE - COMMENTS',
-#  'WORKFLOW - ROS - ROS CARDIO COMMENTS',
-#  'WORKFLOW - ROS - ROS HEMATOLOGY COMMENTS',
-#  'WORKFLOW - ROS - ROS RENAL COMMENTS',
-#  'WORKFLOW - ROS - ONCOLOGY COMMENTS',
-#  'WORKFLOW - ROS - ROS HEENT COMMENTS',
-#  'WORKFLOW - ROS - ROS RESPIRATORY COMMENTS',
-#  'WORKFLOW - ROS - ROS DERMATOLOGICAL/IMMUNOLOGICAL/RHEUMATOLOGICAL COMMENTS',
-#  'WORKFLOW - ROS - ENDO/OTHER TITLE - COMMENTS',
-#  'WORKFLOW - ROS - OB ROS COMMENT']
-#%%
-
-neg_ros_df.SmartDataElement.unique().tolist()
-# ['WORKFLOW - ROS - NEG NEURO/PSYCH ROS',
-#  'WORKFLOW - ROS - NEG PULMONARY ROS',
-#  'WORKFLOW - ROS - NEGATIVE HEENT ROS',
-#  'WORKFLOW - ROS - NEGATIVE HEMATOLOGY ROS',
-#  'WORKFLOW - ROS - NEGATIVE HEMATOLOGY/ONCOLOGY ROS',
-#  'WORKFLOW - ROS - NEGATIVE SKIN ROS',
-#  'WORKFLOW - ROS - NEG ENDO/OTHER ROS',
-#  'WORKFLOW - ROS - NEGATIVE MUSCULOSKELETAL ROS',
-#  'WORKFLOW - ROS - NEG CARDIO ROS',
-#  'WORKFLOW - ROS - NEG GI/HEPATIC/RENAL ROS',
-#  'WORKFLOW - ROS - NEG OB ROS']
 #%%

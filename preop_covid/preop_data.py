@@ -43,13 +43,17 @@ class PreopData:
             self.preop_df.SmartDataElement.str.contains("WORKFLOW -")
         ].copy()
         # Only "WORKFLOW - ROS" SmartDataElement fields
-        self.ros_df = self.workflow_df.loc[
+        self.raw_ros_df = self.workflow_df.loc[
             self.workflow_df.SmartDataElement.str.contains("- ROS -")
         ].copy()
         # Only "DIAGNOSES/PROBLEMS" SmartDataElement fields
-        self.problems_df = self.preop_df.loc[
+        self.raw_problems_df = self.preop_df.loc[
             self.preop_df.SmartDataElement.str.contains("DIAGNOSES/PROBLEMS -")
         ].copy()
+
+        # Transform WORKFLOW - ROS & DIAGNOSES/PROBLEMS into Pertinent Positive/Negative "Presence"
+        self.ros_df = self.clean_workflow_ros(self.raw_ros_df)
+        self.problems_df = self.clean_problems_diagnoses(self.raw_problems_df)
 
     def format_preop_df(self, preop_df: pd.DataFrame | str | Path) -> pd.DataFrame:
         """Clean Preop SmartDataElements dataframe.  This returns a new dataframe
@@ -82,6 +86,155 @@ class PreopData:
                 df.to_parquet(self.processed_preop_df_path)
                 self.preop_df = df.copy()
         return df
+
+    def clean_problems_diagnoses(self, df: pd.DataFrame) -> pd.DataFrame:
+        """For "DIAGNOSIS/PROBLEM - ORGAN SYSTEM - PROBLEM",
+        extracts organ system and problem, then determines if each problem is
+        present or not.  Note that the organ systems are different between
+        diagnosis/problem and workflow - ros.
+
+        Organ Systems defined for DIAGNOSIS/PROBLEM:
+        CARDIOVASCULAR
+        ENDOCRINOLOGY
+        GASTROINTESTINAL
+        PSYCHIATRIC
+        RESPIRATORY
+        GENITOURINARY
+        OPHTHALMOLOGY
+        MUSCULOSKELETAL
+        HEMATOLOGY
+        NEUROLOGICAL
+        ONCOLOGY
+        CONSTITUTIONAL
+        OBSTETRIC
+        HENT
+        IMMUNOLOGICAL
+        RHEUMATOLOGY
+        INFECTIOUS DISEASE
+        ALLERGY
+
+        Pertinent positive and negative in "IsPresent" field.
+        The following conversion is made:
+        "+" marked.  IsPresent = True.
+        comment added.  IsPresent = True.
+        "-" marked.  IsPresent = False.
+
+        Args:
+            df (pd.DataFrame): dataframe of diagnosis/problems from the ROS of the
+                preanesthesia note.
+
+        Returns:
+            pd.DataFrame: New dataframe that just marks pertinent positive and negative
+                for each diagnosis/problem in ROS.  If diagnosis/problem was not
+                marked, then it is not present in this dataframe.
+        """
+        _df = df.copy()
+
+        # Extract Organ System & Problem from SmartDataElement
+        problems_by_system = _df.SmartDataElement.str.split(" - ").apply(
+            lambda x: {"OrganSystem": x[1], "Problem": x[2]}
+        )
+        problems_by_system = pd.DataFrame.from_dict(problems_by_system.to_dict(), orient="index")
+        problems_by_system.index.name = "SmartDataElementUUID"
+
+        _df = _df.join(problems_by_system)
+
+        # For each Organ System & Problem, determine if problem is present or not
+        problem_presence = []
+        for row in _df.itertuples(index=True):
+            uuid = row.Index
+            smart_elem_value = row.SmartElemValue
+            if set(smart_elem_value) == set("0"):
+                presence = False
+            elif set(smart_elem_value) == set("1"):
+                presence = True
+            else:
+                presence = True
+            problem_presence += [{"SmartDataElementUUID": uuid, "IsPresent": presence}]
+        problem_presence = pd.DataFrame(problem_presence).set_index("SmartDataElementUUID")
+        _df = _df.join(problem_presence)
+
+        # Drop original SmartDataElements and SmartElemValue columns
+        _df = _df.drop(columns=["SmartDataElement", "SmartElemValue"])
+        return _df
+
+    def clean_workflow_ros(self, df: pd.DataFrame) -> pd.DataFrame:
+        """For "WORKFLOW - ROS - ORGAN SYSTEM", organ system, then determines
+        if ROS for organ system was negative or positive (had a comment entered).
+        Note that the organ systems are different between
+        diagnosis/problem and workflow - ros.
+
+        Pertinent positive and negative in "IsPresent" field.
+        The following conversion is made:
+        "+" marked.  IsPresent = True.
+        comment added.  IsPresent = True.
+        nothing marked.  IsPresent = False.
+
+        Organ Systems defined for WORKFLOW - ROS:
+        CARDIAC
+        PULMONARY
+        NEURO_PSYCH
+        RENAL_GI
+        HEENT
+        MUSCULOSKELETAL
+        DERMATOLOGICAL
+        ENDOCRINE
+        HEMATOLOGY
+        ONCOLOGY
+        OBSTETRIC
+
+        Args:
+            df (pd.DataFrame): dataframe with overall organ system ROS from the
+                preanesthesia note.
+
+        Returns:
+            pd.DataFrame: New dataframe that just marks pertinent positive and negative
+                for each organ system.  If organ system is not marked for the case,
+                then it will not be present for that case.
+        """
+        _df = df.copy()
+        ros_presence = []
+        for row in _df.itertuples(index=True):
+            uuid = row.Index
+            element = row.SmartDataElement
+            # value = row.SmartElemValue
+
+            sde_mapping = {
+                "CARDIAC": ["ROS CARDIO COMMENTS", "NEG CARDIO ROS"],
+                "PULMONARY": ["ROS RESPIRATORY COMMENTS", "NEG PULMONARY ROS"],
+                "NEURO_PSYCH": ["NEURO/PSYCH TITLE - COMMENTS", "NEG NEURO/PSYCH ROS"],
+                "RENAL_GI": ["ROS RENAL COMMENTS", "NEG GI/HEPATIC/RENAL ROS"],
+                "HEENT": ["ROS HEENT COMMENTS", "NEGATIVE HEENT ROS"],
+                "MUSCULOSKELETAL": ["ROS MUSCULOSKELETAL COMMENTS", "NEGATIVE MUSCULOSKELETAL ROS"],
+                "DERMATOLOGICAL": [
+                    "ROS DERMATOLOGICAL/IMMUNOLOGICAL/RHEUMATOLOGICAL COMMENTS",
+                    "NEGATIVE SKIN ROS",
+                ],
+                "ENDOCRINE": ["ENDO/OTHER TITLE - COMMENTS", "NEG ENDO/OTHER ROS"],
+                "HEMATOLOGY": ["ROS HEMATOLOGY COMMENTS", "NEGATIVE HEMATOLOGY ROS"],
+                "ONCOLOGY": ["ONCOLOGY COMMENTS", "NEGATIVE HEMATOLOGY/ONCOLOGY ROS"],
+                "OBSTETRIC": ["OB ROS COMMENT", "NEG OB ROS"],
+            }
+
+            # Loop through all organ systems and SmartDataElement mappings
+            for organ_system, sde_name_snippet in sde_mapping.items():
+                if any(x in element for x in sde_name_snippet):
+                    presence = False if "NEG" in element else True
+                    ros_presence += [
+                        {
+                            "SmartDataElementUUID": uuid,
+                            "OrganSystem": organ_system,
+                            "IsPresent": presence,
+                        }
+                    ]
+                    break
+
+        ros_presence = pd.DataFrame(ros_presence).set_index("SmartDataElementUUID")
+        _df = _df.join(ros_presence)
+
+        # Drop original SmartDataElements and SmartElemValue columns
+        _df = _df.drop(columns=["SmartDataElement", "SmartElemValue"])
+        return _df
 
     def create_uuid(self, df: pd.DataFrame) -> pd.Series:
         """Create UUID for each SmartDataElement based on MPOG Case ID, MPOG Patient ID,
