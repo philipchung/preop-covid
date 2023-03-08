@@ -309,7 +309,6 @@ class CaseData:
         self,
         labs_df: Optional[pd.DataFrame] = None,
         processed_case_lab_association_path: Optional[str | Path] = None,
-        update_cases_df: bool = True,
     ) -> pd.DataFrame:
         if labs_df is None and processed_case_lab_association_path is None:
             raise ValueError(
@@ -367,9 +366,9 @@ class CaseData:
             ].apply(lambda x: x.isoformat())
             case_lab_association_df.to_parquet(self.processed_case_lab_association_path)
 
-        if update_cases_df:
-            self.cases_df = self.cases_df.join(self.case_lab_association_df)
-        return self.case_lab_association_df
+        # Join labs to cases_df
+        self.cases_df = self.cases_df.join(self.case_lab_association_df)
+        return self.cases_df
 
     def categorize_duration(self, duration: timedelta) -> str | None:
         """Creates buckets of duration similar to how COVIDSurg 2021 paper did it.

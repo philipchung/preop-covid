@@ -31,20 +31,34 @@ labs_df = lab_data()
 
 # Load & Clean Cases Data
 case_data = CaseData(cases_df=cases_path, data_version=data_version)
-cases_df = case_data()
-
 # Associate Labs from each Patient to Cases for each Patient
-case_data.associate_labs_to_cases(labs_df=labs_df, update_cases_df=True)
+cases_df = case_data.associate_labs_to_cases(labs_df=labs_df)
 
 # Get only patients with a positive Preop COVID test
 cases_with_positive_preop_covid = cases_df[cases_df.HasPositivePreopCovidTest]
 
+#%%
 # Load & Clean Vaccine Data
 vaccine_data = VaccineData(vaccines_df=hm_path, data_version=data_version)
+flu_vaccines_df = vaccine_data.flu_vaccines_df
+covid_vaccines_df = vaccine_data.covid_vaccines_df
 
+covid_vaccines_df.VaccineKind.value_counts()
 #%%
 # Load & Clean SmartDataElements Data
 preop_data = PreopData(preop_df=preop_smartdataelements_path, data_version=data_version)
 problems_df = preop_data.problems_df
 
+problems_df.loc[problems_df.IsPresent].Problem.value_counts()
+
 #%%
+# TODO:
+# 1. pick out top diagnoses (CV, pulm, renal) from ROS/problems_df that we want to examine
+# 2. join ROS/problems into cases_df table (alongside Elixhauser Comorbidities)
+#    so each case has associated ROS (binary values)
+# 3. for each case, get total # of vaccines/boosters; get # of vaccines/booster & duration
+#    since last vaccine/booster administration.
+# 4. For patients with vaccine in past 6 months, compare outcomes (PACU duration, Hospital LOS, Mortality)
+# 5. repeat for patients with vaccine in past 12 months...
+# (NEJM paper suggests clinical protection for 6 months: https://www.nejm.org/doi/full/10.1056/NEJMoa2118691)
+# 6. Patients with Heart Disease
