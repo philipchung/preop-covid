@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from functools import partial
 from pathlib import Path
 from typing import Optional
@@ -99,47 +100,61 @@ class VaccineData:
         Returns:
             pd.DataFrame: transformed output dataframe
         """
-        _df = vaccines_df.copy()
-        # Drop Incompleted Vaccines
-        _df = _df.loc[_df.HMType == "Done"]
-        # Clean Vaccine Type
-        _df["VaccineType"] = _df.HMTopic.apply(self.clean_hm_topic_value).astype(
-            self.vaccine_category
-        )
-        # Keep Only COVID-19 and Influenza Vaccines
-        _df = _df.loc[_df.VaccineType != "Other"]
-        # Create UUID for each Vaccine Administration based on MPOG Patient ID,
-        # Health Maintenance Topic, Health Maintenance DateTime.  If there are any
-        # duplicated UUIDs, the row entry has the same value for all 3 of these.
-        vaccine_uuid = _df.apply(
-            lambda row: create_uuid(
-                str(row.MPOG_Patient_ID) + str(row.HMTopic) + str(row.HM_HX_DATE)
-            ),
-            axis=1,
-        )
-        _df["VaccineUUID"] = vaccine_uuid
-        # Remove Case Info
-        _df = _df.loc[
-            :, ["VaccineUUID", "MPOG_Patient_ID", "HM_HX_DATE", "COMMENTS", "VaccineType"]
-        ]
-
-        # Try to load cached data if it exists
         try:
+            # Try to load cached cleand dataframe if it exists
             vaccines_df = pd.read_parquet(self.cleaned_vaccines_df_path)
-            # Check to see if same VaccineUUIDs
-            assert set(vaccines_df.index.tolist()) == set(_df["VaccineUUID"].tolist())
-            # If pass, then we can use the cached result
             self.vaccines_df = vaccines_df
             self.flu_vaccines_df = vaccines_df.loc[vaccines_df.VaccineType == "Influenza"]
             self.covid_vaccines_df = vaccines_df.loc[vaccines_df.VaccineType == "COVID-19"]
             return self.vaccines_df
         except FileNotFoundError:
-            # No cached file, so we need to cleanup the vaccine data
+            # No Cached File, so we will clean vaccines table
+            _df = vaccines_df.copy()
+            # Drop Incompleted Vaccines
+            _df = _df.loc[_df.HMType == "Done"]
+            # Clean Vaccine Type
+            _df["VaccineType"] = _df.HMTopic.apply(self.clean_hm_topic_value).astype(
+                self.vaccine_category
+            )
+            # Keep Only COVID-19 and Influenza Vaccines
+            _df = _df.loc[_df.VaccineType != "Other"]
+            # Create UUID for each Vaccine Administration based on MPOG Patient ID,
+            # Health Maintenance Topic, Health Maintenance DateTime.  If there are any
+            # duplicated UUIDs, the row entry has the same value for all 3 of these.
+            vaccine_uuid = _df.apply(
+                lambda row: create_uuid(
+                    str(row.MPOG_Patient_ID) + str(row.HMTopic) + str(row.HM_HX_DATE)
+                ),
+                axis=1,
+            )
+            _df["VaccineUUID"] = vaccine_uuid.copy()
+            # Format Administration Date/Time into DateTime Objects
+            administration_dt = _df.HM_HX_DATE.apply(
+                lambda s: datetime.strptime(s, r"%Y-%m-%d %H:%M:%S")
+            )
+            print("admininstration_dt datatype: ", administration_dt.dtype)
+            _df["HM_HX_Date"] = administration_dt.copy()
+            # Remove Case Info
+            _df = pd.DataFrame(
+                data={
+                    "VaccineUUID": vaccine_uuid,
+                    "MPOG_Patient_ID": _df.MPOG_Patient_ID,
+                    "VaccineDate": administration_dt,
+                    "COMMENTS": _df.COMMENTS,
+                    "VaccineType": _df.VaccineType,
+                },
+                index=_df.index,
+            )
+            # _df = _df.loc[
+            #     :, ["VaccineUUID", "MPOG_Patient_ID", "HM_HX_DATE", "COMMENTS", "VaccineType"]
+            # ]
+            print("_df datatypes", _df.dtypes)
 
-            # Unfortunately we can't uniquify based on VaccineUUID yet at this point.
+            # NOTE: Unfortunately we can't uniquify based on VaccineUUID yet at this point.
             # There are some vaccine COMMENTS for flu vaccine that are different even though
             # the administration date is the same.  We can't drop COMMENTS yet because we
-            # need them to further categorize COVID-19 vaccine.
+            # need them to further categorize COVID-19 vaccine.  We uniquify VaccineUUID
+            # after further cleaning.
 
             # Isolate Flu Vaccines
             _flu_df = _df.loc[_df.VaccineType == "Influenza"].copy()
