@@ -7,9 +7,9 @@ from utils import create_uuid, parallel_process, read_pandas
 
 
 @dataclass
-class PreopData:
-    """Data object to load structured data from preop note (e.g. ROS),
-    clean and process data."""
+class PreopSDE:
+    """Data object to load structured Epic SmartDataElements data
+    from preop note (e.g. ROS), clean and process data."""
 
     preop_df: str | Path | pd.DataFrame
     processed_preop_df_path: Optional[str | Path] = None
