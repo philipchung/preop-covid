@@ -57,10 +57,10 @@ problems_df.loc[problems_df.IsPresent].Problem.value_counts()
 # into a single row prior to joining these tables together
 
 # %%
-# Join Covid Vaccines to Cases
+# Get Number of Pre-op COVID vaccines for each Case
 # (row for every unique MPOG_Case_ID & Vaccine_UUID combination)
 c = cases_df.reset_index().loc[:, ["MPOG_Case_ID", "MPOG_Patient_ID", "AnesStart"]]
-df = pd.merge(
+covid_vaccines = pd.merge(
     left=c,
     right=covid_vaccines_df.reset_index(),
     how="left",
@@ -68,13 +68,14 @@ df = pd.merge(
     right_on="MPOG_Patient_ID",
 ).set_index("MPOG_Case_ID")
 # Only keep rows where vaccine was administered prior to Case Start
-df = df.loc[df.AnesStart > df.VaccineDate]
+covid_vaccines = covid_vaccines.loc[covid_vaccines.AnesStart > covid_vaccines.VaccineDate]
 # Aggregate Multiple Pre-op Vaccines for each MPOG_Case_ID into a list
 # so we have 1 row per MPOG_Case_ID
-df = df.groupby("MPOG_Case_ID")["VaccineUUID", "VaccineDate"].agg(
+covid_vaccines = covid_vaccines.groupby("MPOG_Case_ID")["VaccineUUID", "VaccineDate"].agg(
     {"VaccineUUID": list, "VaccineDate": list}
 )
-print(f"Num Cases with Preop Vaccine Data: {df.shape[0]}")
+covid_vaccines["NumPreopVaccines"] = covid_vaccines.VaccineUUID.apply(len)
+print(f"Num Cases with Preop Vaccine Data: {covid_vaccines.shape[0]}")
 
 # Pivot Table for ROS Problems to get ProcID x Problems
 # If any SmartDataEelement is True for a Problem (across any PreAnes Note)
@@ -101,13 +102,86 @@ cases_organ_systems = pd.pivot_table(
     fill_value=False,
 )
 print(f"Num Cases with ROS Problems Marked by Organ Systems: {cases_organ_systems.shape[0]}")
+#%%
+# Join Vaccines, SDE Problems & Organ Systems Data to original cases table
+# Note: original cases table has all the Elixhauser Comorbidities & Complications
+# as well as time between last PCR+ test and case
+# We drop cases where we don't have SDE data
 
-# Join SDE Problems & Organ Systems Data to cases table
-# We drop cases where we don't have both Vaccine Data & SDE data
+# Join Vaccines (MPOG_Case_ID without vaccines are unvaccinated)
+df = cases_df.join(covid_vaccines, how="left")
+df.VaccineUUID = df.VaccineUUID.apply(lambda x: x if isinstance(x, list) else [])
+df.VaccineDate = df.VaccineDate(lambda x: x if isinstance(x, list) else [])
+df.NumPreopVaccines = df.NumPreopVaccines.fillna(0)
+# TODO: fix this
+
+# Join SDE Data
 df = df.join(cases_organ_systems, how="inner").join(cases_problems, how="inner")
 print(f"Num Cases: {df.shape[0]}")
 
+# Preview this Table
+df.head(n=10)
 
+#%%
+# Covid Vaccine Columns
+covid_vaccines.columns
+#%%
+# All ROS Problems
+cases_problems.columns
+#%%
+# All ROS Organ Systems
+cases_organ_systems.columns
+#%%
+# Case Data (Elixhauser Comorbidiites, Complications, PCR Data)
+cases_df.columns
+
+#%% [markdown]
+# Now we can interrogate almost any patient population based on combination of ROS
+# or COVID Vaccination Status and look at the MPOG documented complication
+# or Elixhauser Comorbidities
+# NOTE:
+# - Any Cohort selection is based on ROS Data from Pre-op Note
+# - Any Outcome Complications or Elixhauser Comorbidities is based on case billing data
+# (e.g. ICD codes)
+
+#%%
+# Cohort = Patients with COPD (in ROS)
+copd = df.loc[df.COPD]
+# Outcome = PulmonaryComplication (by case ICD code)
+copd.HadPulmonaryComplication.value_counts()
+#%%
+# Outcome = CardiacComplication (by case ICD code)
+copd.HadCardiacComplication.value_counts()
+#%%
+# Outcome = AKIComplication (by case ICD code)
+copd.HadAKIComplication.value_counts()
+#%%
+# Cohort = Patients with COPD or Asthma or Bronchitis or URI (in ROS)
+acute_or_chronic_pulm_dz = df.loc[df.COPD | df.ASTHMA | df.BRONCHITIS | df.URI]
+# Outcome = PulmonaryComplication (by case ICD code)
+acute_or_chronic_pulm_dz.HadPulmonaryComplication.value_counts()
+#%%
+# Outcome = CardiacComplication (by case ICD code)
+acute_or_chronic_pulm_dz.HadCardiacComplication.value_counts()
+#%%
+# Outcome = AKIComplication (by case ICD code)
+acute_or_chronic_pulm_dz.HadAKIComplication.value_counts()
+#%%
+# cohort = Patient with any +Respiratory ROS
+any_respiratory = df.loc[df.RESPIRATORY]
+# Outcome = PulmonaryComplication (by case ICD code)
+any_respiratory.HadPulmonaryComplication.value_counts()
+#%%
+# Outcome = CardiacComplication (by case ICD code)
+any_respiratory.HadCardiacComplication.value_counts()
+#%%
+# Outcome = AKIComplication (by case ICD code)
+any_respiratory.HadAKIComplication.value_counts()
+#%%
+# cohort = Patient with any +Respiratory ROS
+any_respiratory.loc[:, ["HadPulmonaryComplication", "NumPreopVaccines"]].value_counts()
+
+#
 #%%
 # TODO:
 # 1. pick out top diagnoses (CV, pulm, renal) from ROS/problems_df that we want to examine
