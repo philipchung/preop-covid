@@ -2,6 +2,8 @@
 **/data/**
 *.html
 *.pdf
+*.docx
+*.doc
 
 .DS_Store
 
