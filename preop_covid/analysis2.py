@@ -4,8 +4,10 @@ from pathlib import Path
 import pandas as pd
 from case_data import CaseData
 from lab_data import LabData
-from preop_data import PreopData
+from preop_data import PreopSDE
 from vaccine_data import VaccineData
+
+from .utils.parallel_process import parallel_process
 
 # Define data paths and directories
 project_dir = Path("/Users/chungph/Developer/preop-covid")
@@ -46,7 +48,7 @@ covid_vaccines_df = vaccine_data.covid_vaccines_df
 covid_vaccines_df.VaccineKind.value_counts()
 #%%
 # Load & Clean SmartDataElements Data
-preop_data = PreopData(preop_df=preop_smartdataelements_path, data_version=data_version)
+preop_data = PreopSDE(preop_df=preop_smartdataelements_path, data_version=data_version)
 problems_df = preop_data.problems_df
 
 problems_df.loc[problems_df.IsPresent].Problem.value_counts()
@@ -62,3 +64,81 @@ problems_df.loc[problems_df.IsPresent].Problem.value_counts()
 # 5. repeat for patients with vaccine in past 12 months...
 # (NEJM paper suggests clinical protection for 6 months: https://www.nejm.org/doi/full/10.1056/NEJMoa2118691)
 # 6. Patients with Heart Disease
+
+#%%
+
+# %%
+c = cases_df.loc[:, ["MPOG_Patient_ID", "AnesStart"]]
+
+# Join Covid Vaccines to Cases
+# (row for every unique MPOG_Case_ID & Vaccine_UUID combination)
+df = pd.merge(
+    left=c.reset_index(),
+    right=covid_vaccines_df.reset_index(),
+    how="inner",
+    left_on="MPOG_Patient_ID",
+    right_on="MPOG_Patient_ID",
+)
+df
+#%%
+# Only keep rows where vaccine was administered prior to Case Start
+res = df.loc[df.AnesStart > df.VaccineDate]
+res
+#%%
+from datetime import timedelta
+
+from utils import parallel_process
+
+# Compute Durations Between Vaccine
+gb = res.groupby("MPOG_Case_ID")[["AnesStart", "VaccineUUID", "VaccineDate", "VaccineKind"]]
+
+
+def vaccine_durations_per_case(MPOG_Case_ID: str, df: pd.DataFrame) -> dict:
+    d = vaccine_durations(df)
+    return {"MPOG_Case_ID": MPOG_Case_ID} | d
+
+
+def vaccine_durations(df: pd.DataFrame) -> dict:
+    """Compute vaccine durations between case and vaccine administraiton.
+
+    Args:
+        df (pd.DataFrame): Dataframe with columns
+            ["AnesStart", "VaccineUUID", "VaccineDate", "VaccineKind"]
+
+    Returns:
+        dict: dictionary of derived duration values & categories.
+    """
+    _df = df.copy()
+    # Only keep rows where vaccine was administered prior to Case Start
+    _df = _df.loc[_df.AnesStart > _df.VaccineDate]
+    # Durations
+    duration = _df.AnesStart - _df.VaccineDate
+
+    return {
+        "NumCovidVaccines": len(_df),
+        "CovidVaccineDateTimes": _df.VaccineDate.tolist(),
+        "CovidVaccineCaseIntervals": duration.tolist(),
+        "CovidVaccineLastThreeMonths": any(duration < timedelta(days=90)),
+        "CovidVaccineLastSixMonths": any(duration < timedelta(days=180)),
+        "CovidVaccineLastTwelveMonths": any(duration < timedelta(days=365)),
+    }
+
+
+results = parallel_process(
+    iterable=gb, function=vaccine_durations_per_case, use_args=True, desc="Vaccine Case Durations"
+)
+#%%
+df2 = pd.DataFrame(results)
+
+#%%
+# %%
+# limit to possible covid?  home test?
+# look just at vaccination status.  Difference in all-comers.
+
+# - is there a difference risk between 2-3 post-op complications between vaccinated & non-vaccinated
+
+# ROS groups:
+# - COPD (assoc. w/ COVID)
+# - CHF (interaction w/ COVID)
+# - h/o MI
+# - stroke (inc. risk w/ stroke w/ COVID)
