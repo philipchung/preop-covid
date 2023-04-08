@@ -1,6 +1,7 @@
 #%%
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from case_data import CaseData
 from lab_data import LabData
@@ -110,17 +111,17 @@ print(f"Num Cases with ROS Problems Marked by Organ Systems: {cases_organ_system
 
 # Join Vaccines (MPOG_Case_ID without vaccines are unvaccinated)
 df = cases_df.join(covid_vaccines, how="left")
-df.VaccineUUID = df.VaccineUUID.apply(lambda x: x if isinstance(x, list) else [])
-df.VaccineDate = df.VaccineDate(lambda x: x if isinstance(x, list) else [])
+
+df.VaccineUUID = [[] if x is np.NaN else x for x in df.VaccineUUID]
+df.VaccineDate = [[] if x is np.NaN else x for x in df.VaccineDate]
 df.NumPreopVaccines = df.NumPreopVaccines.fillna(0)
-# TODO: fix this
 
 # Join SDE Data
 df = df.join(cases_organ_systems, how="inner").join(cases_problems, how="inner")
 print(f"Num Cases: {df.shape[0]}")
 
 # Preview this Table
-df.head(n=10)
+df
 
 #%%
 # Covid Vaccine Columns
