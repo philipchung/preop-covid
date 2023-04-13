@@ -21,6 +21,7 @@ types-pyyaml = "^6.0.12.8"
 scikit-learn = "^1.2.2"
 numba = "^0.56.4"
 umap-learn = "^0.5.3"
+nimfa = "^1.4.0"
 
 [tool.poetry.group.dev.dependencies]
 black = "^22.10.0"
