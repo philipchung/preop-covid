@@ -393,8 +393,20 @@ p1.set(
     xlabel="Number of Components",
     ylabel="Cophenetic Correlation Coefficient",
 )
+
 #%%
-estimate_rank_results.keys()
+# Convert Dict to Dataframe
+estimate_rank_df = pd.DataFrame.from_dict(data=estimate_rank_results, orient="index")
+estimate_rank_df
+#%%
+# Save Dataframe as Pickle
+nmf_est_rank_path = data_dir / "v2" / "processed" / "nmf_estimate_rank1.pickle"
+estimate_rank_df.to_pickle(path=nmf_est_rank_path)
+#%%
+# Read Pickled Dataframe it back to memory and transform it back into a dict
+estimate_rank_df = pd.read_pickle(nmf_est_rank_path)
+nmf_rank_est_dict = estimate_rank_df.to_dict(orient="index")
+nmf_rank_est_dict
 
 #%%
 # Visualize with UMAP
