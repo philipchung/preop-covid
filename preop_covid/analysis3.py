@@ -1,10 +1,13 @@
 #%%
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
 from case_data import CaseData
 from lab_data import LabData
+from pandas.api.types import CategoricalDtype
 from preop_data import PreopSDE
 from vaccine_data import VaccineData
 
@@ -78,6 +81,8 @@ covid_vaccines = covid_vaccines.groupby("MPOG_Case_ID")["VaccineUUID", "VaccineD
 covid_vaccines["NumPreopVaccines"] = covid_vaccines.VaccineUUID.apply(len)
 print(f"Num Cases with Preop Vaccine Data: {covid_vaccines.shape[0]}")
 
+# TODO: deduplicate num_preop vaccines?
+
 # Pivot Table for ROS Problems to get ProcID x Problems
 # If any SmartDataEelement is True for a Problem (across any PreAnes Note)
 # written for a specific ProcID, then we mark the Problem as True.
@@ -109,12 +114,17 @@ print(f"Num Cases with ROS Problems Marked by Organ Systems: {cases_organ_system
 # as well as time between last PCR+ test and case
 # We drop cases where we don't have SDE data
 
+num_preop_vaccines_cat = CategoricalDtype(categories=["0", "1", "2", "3", "4+"], ordered=True)
+
 # Join Vaccines (MPOG_Case_ID without vaccines are unvaccinated)
 df = cases_df.join(covid_vaccines, how="left")
 
 df.VaccineUUID = [[] if x is np.NaN else x for x in df.VaccineUUID]
 df.VaccineDate = [[] if x is np.NaN else x for x in df.VaccineDate]
-df.NumPreopVaccines = df.NumPreopVaccines.fillna(0)
+df.NumPreopVaccines = df.NumPreopVaccines.fillna(0).astype(int)
+df["NumPreopVaccinesCat"] = df.NumPreopVaccines.apply(lambda x: "4+" if x >= 4 else f"{x}").astype(
+    num_preop_vaccines_cat
+)
 
 # Join SDE Data
 df = df.join(cases_organ_systems, how="inner").join(cases_problems, how="inner")
@@ -125,17 +135,20 @@ df
 
 #%%
 # Covid Vaccine Columns
-covid_vaccines.columns
+covid_vaccine_cols = covid_vaccines.columns.tolist()
+covid_vaccine_cols
 #%%
 # All ROS Problems
-cases_problems.columns
+ros_problem_cols = cases_problems.columns.tolist()
+ros_problem_cols
 #%%
 # All ROS Organ Systems
-cases_organ_systems.columns
+ros_organ_systems_cols = cases_organ_systems.columns.tolist()
+ros_organ_systems_cols
 #%%
 # Case Data (Elixhauser Comorbidiites, Complications, PCR Data)
-cases_df.columns
-
+case_cols = cases_df.columns.tolist()
+case_cols
 #%% [markdown]
 # Now we can interrogate almost any patient population based on combination of ROS
 # or COVID Vaccination Status and look at the MPOG documented complication
@@ -146,32 +159,120 @@ cases_df.columns
 # (e.g. ICD codes)
 
 #%%
+#%%
+def make_count_percent_plots(
+    data: pd.DataFrame, x: str, hue: str, xlabel: str, title: str
+) -> tuple[plt.Figure, list[plt.Axes]]:
+    fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+    # Count Plot
+    sns.histplot(
+        data=data,
+        x=x,
+        hue=hue,
+        stat="count",
+        multiple="dodge",
+        ax=ax[0],
+    )
+    ax[0].set(title="Case Counts", xlabel=xlabel)
+    for container in ax[0].containers:
+        ax[0].bar_label(container, label_type="edge", fmt="%g")
+    # Percent Plot
+    sns.histplot(
+        data=data,
+        x=x,
+        hue=hue,
+        stat="percent",
+        multiple="fill",
+        ax=ax[1],
+    )
+    ax[1].set(title="Percentage of Cases", xlabel=xlabel)
+    for container in ax[1].containers:
+        ax[1].bar_label(container, label_type="center", fmt="%.2f")
+    plt.suptitle(title)
+    plt.tight_layout()
+    return fig, ax
+
+
 # Cohort = Patients with COPD (in ROS)
 copd = df.loc[df.COPD]
 # Outcome = PulmonaryComplication (by case ICD code)
-copd.HadPulmonaryComplication.value_counts()
-#%%
+fig, ax = make_count_percent_plots(
+    data=copd,
+    x="NumPreopVaccinesCat",
+    hue="HadPulmonaryComplication",
+    xlabel="Number of Preop Covid Vaccines",
+    title="Patients with COPD who HadPulmonaryComplication",
+)
 # Outcome = CardiacComplication (by case ICD code)
-copd.HadCardiacComplication.value_counts()
-#%%
+fig, ax = make_count_percent_plots(
+    data=copd,
+    x="NumPreopVaccinesCat",
+    hue="HadCardiacComplication",
+    xlabel="Number of Preop Covid Vaccines",
+    title="Patients with COPD who HadCardiacComplication",
+)
 # Outcome = AKIComplication (by case ICD code)
-copd.HadAKIComplication.value_counts()
+fig, ax = make_count_percent_plots(
+    data=copd,
+    x="NumPreopVaccinesCat",
+    hue="HadAKIComplication",
+    xlabel="Number of Preop Covid Vaccines",
+    title="Patients with COPD who HadAKIComplication",
+)
 #%%
 # Cohort = Patients with COPD or Asthma or Bronchitis or URI (in ROS)
 acute_or_chronic_pulm_dz = df.loc[df.COPD | df.ASTHMA | df.BRONCHITIS | df.URI]
 # Outcome = PulmonaryComplication (by case ICD code)
-acute_or_chronic_pulm_dz.HadPulmonaryComplication.value_counts()
-#%%
+fig, ax = make_count_percent_plots(
+    data=acute_or_chronic_pulm_dz,
+    x="NumPreopVaccinesCat",
+    hue="HadPulmonaryComplication",
+    xlabel="Number of Preop Covid Vaccines",
+    title="Patients with COPD who HadPulmonaryComplication",
+)
 # Outcome = CardiacComplication (by case ICD code)
-acute_or_chronic_pulm_dz.HadCardiacComplication.value_counts()
-#%%
+fig, ax = make_count_percent_plots(
+    data=acute_or_chronic_pulm_dz,
+    x="NumPreopVaccinesCat",
+    hue="HadCardiacComplication",
+    xlabel="Number of Preop Covid Vaccines",
+    title="Patients with COPD who HadCardiacComplication",
+)
 # Outcome = AKIComplication (by case ICD code)
-acute_or_chronic_pulm_dz.HadAKIComplication.value_counts()
+fig, ax = make_count_percent_plots(
+    data=acute_or_chronic_pulm_dz,
+    x="NumPreopVaccinesCat",
+    hue="HadAKIComplication",
+    xlabel="Number of Preop Covid Vaccines",
+    title="Patients with COPD who HadAKIComplication",
+)
 #%%
 # cohort = Patient with any +Respiratory ROS
 any_respiratory = df.loc[df.RESPIRATORY]
 # Outcome = PulmonaryComplication (by case ICD code)
-any_respiratory.HadPulmonaryComplication.value_counts()
+fig, ax = make_count_percent_plots(
+    data=any_respiratory,
+    x="NumPreopVaccinesCat",
+    hue="HadPulmonaryComplication",
+    xlabel="Number of Preop Covid Vaccines",
+    title="Patients with COPD who HadPulmonaryComplication",
+)
+# Outcome = CardiacComplication (by case ICD code)
+fig, ax = make_count_percent_plots(
+    data=any_respiratory,
+    x="NumPreopVaccinesCat",
+    hue="HadCardiacComplication",
+    xlabel="Number of Preop Covid Vaccines",
+    title="Patients with COPD who HadCardiacComplication",
+)
+# Outcome = AKIComplication (by case ICD code)
+fig, ax = make_count_percent_plots(
+    data=any_respiratory,
+    x="NumPreopVaccinesCat",
+    hue="HadAKIComplication",
+    xlabel="Number of Preop Covid Vaccines",
+    title="Patients with COPD who HadAKIComplication",
+)
 #%%
 # Outcome = CardiacComplication (by case ICD code)
 any_respiratory.HadCardiacComplication.value_counts()
