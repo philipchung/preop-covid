@@ -336,33 +336,9 @@ topic_features = H_df.apply(
 topic_features.apply(lambda top_k: ", ".join(top_k)).to_dict()
 # TODO: visualize cluster membership for topic
 #%%
-# Use NIMFA for NMF
-import nimfa
-
-X_df = df.loc[:, ["NumPreopVaccines"] + ros_problem_cols]
-X = X_df.to_numpy()
-nmf = nimfa.Nmf(
-    V=X,
-    seed="nndsvd",
-    rank=10,
-    objective="fro",
-    update="euclidean",
-    max_iter=200,
-)
-nmf_fit = nmf()
-# Samples as weighted topics
-W = nmf_fit.basis()
-# Topics as weighted blend of original features
-H = nmf_fit.coef()
-#%%
-summary = nmf_fit.summary()
-summary.keys()
-
-#%%
-summary["n_iter"]
-#%%
 # Plot Cophenetic Correlation Coefficient vs. NMF rank to determine the optimal
 # Number of factors (soft "clusters") to explain data
+# (this computation takes a very long time)
 import nimfa
 
 rank_range = range(2, 51)
@@ -409,23 +385,107 @@ nmf_rank_est_dict = estimate_rank_df.to_dict(orient="index")
 nmf_rank_est_dict
 
 #%%
+# Use NIMFA for NMF
+import nimfa
+
+X_df = df.loc[:, ["NumPreopVaccines"] + ros_problem_cols]
+X = X_df.to_numpy()
+nmf = nimfa.Nmf(
+    V=X,
+    seed="nndsvd",
+    rank=30,
+    objective="fro",
+    update="euclidean",
+    max_iter=200,
+)
+nmf_fit = nmf()
+# Transformed Data: Samples as weighted topics
+W = nmf_fit.basis()
+# Component Matrix: Topics as weighted blend of original features
+H = nmf_fit.coef()
+#%%
+summary = nmf_fit.summary()
+summary.keys()
+#%%
+# Each row in H is a Topic.  Each Col in H is the original feature).
+# Topics are a blend of the original features
+topic_names = [f"Topic{k}" for k in range(H.shape[0])]
+H_df = pd.DataFrame(
+    data=H,
+    columns=X_df.columns,
+    index=topic_names,
+)
+H_df
+#%%
+# Get Top 5 features for each topic & the percent each feature contributes to the topic
+# Normalize the component matrix by each topic
+H_df_norm = H_df.apply(lambda row: row / row.sum(), axis=1)
+# Get top 5 and their percentage weights
+topic_features_norm = H_df_norm.apply(
+    lambda row: [f"{k} ({v:.2%})" for k, v in row.nlargest(5).items()], axis=1
+)
+# Format as a dataframe
+topic_features_norm_df = pd.DataFrame.from_dict(
+    data=topic_features_norm.to_dict(),
+    orient="index",
+    columns=[f"TopFeature{k+1}" for k in range(5)],
+)
+topic_features_norm_df
+# %%
+# Create mapping between topic name and a topic "alias"/identity
+topic_name2alias = H_df_norm.apply(
+    lambda row: [f"{k}" for k in row.nlargest(1).keys()][0], axis=1
+).to_dict()
+topic_name2alias
+#%%
+# Put Transformed Data Matrix into a Dataframe
+W_df = pd.DataFrame(data=W, columns=[topic_name2alias[n] for n in topic_names], index=X_df.index)
+
+# Normalize Transformed Data Matrix by Row so we get % of each Topic
+W_df_norm = W_df.apply(lambda row: row / row.sum(), axis=1)
+# Apply Threshold of 50% for a example to be predominatly explained
+# by a topic.  If this is true, we will "label" these examples
+# by the topic to create a "soft" cluster.
+threshold = 0.25
+mask = W_df_norm.applymap(lambda x: x > threshold)
+#%%
+# How many examples in each cluster
+mask.sum()
+#%%
+# How many examples not in each cluster
+(mask is not True).sum()
+
+#%%
+
+#%%
 # Visualize with UMAP
 import umap
 
 reducer = umap.UMAP(random_state=42)
 embedding = reducer.fit_transform(X)
+#%%
 # Make Embedding Dataframe
-data = pd.DataFrame(embedding, columns=["UMAP1", "UMAP2"], index=df.index).join(
-    df.NumPreopVaccinesCat
+data = (
+    pd.DataFrame(embedding, columns=["UMAP1", "UMAP2"], index=df.index)
+    .join(df.NumPreopVaccinesCat)
+    .join(mask)
 )
 #%%
 # Add Labels from Clustering
-data["y_hc"] = X_df["y_hc"].astype("category")
+# data["y_hc"] = X_df["y_hc"].astype("category")
 
 # Visualize UMAP + Cluster Labels
 fig, ax = plt.subplots(figsize=(10, 10))
 # sns.scatterplot(data=data, x="UMAP1", y="UMAP2", hue="NumPreopVaccinesCat", edgecolor=None, s=2)
-sns.scatterplot(data=data, x="UMAP1", y="UMAP2", hue="y_hc", edgecolor=None, s=2)
+sns.scatterplot(
+    data=data,
+    x="UMAP1",
+    y="UMAP2",
+    hue="HYPERTENSION",
+    palette=["yellow", "gray"],
+    edgecolor=None,
+    s=2,
+)
 plt.title("UMAP projection", fontsize=24)
 #%%
 # TODO:
