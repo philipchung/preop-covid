@@ -273,17 +273,148 @@ fig, ax = make_count_percent_plots(
     xlabel="Number of Preop Covid Vaccines",
     title="Patients with COPD who HadAKIComplication",
 )
+#%% [markdown]
+# ## Dimensionality Reduction & Clustering of ROS Problems
 #%%
-# Outcome = CardiacComplication (by case ICD code)
-any_respiratory.HadCardiacComplication.value_counts()
-#%%
-# Outcome = AKIComplication (by case ICD code)
-any_respiratory.HadAKIComplication.value_counts()
-#%%
-# cohort = Patient with any +Respiratory ROS
-any_respiratory.loc[:, ["HadPulmonaryComplication", "NumPreopVaccines"]].value_counts()
+# Cluster
+from sklearn.cluster import DBSCAN
 
-#
+X_df = df.loc[:, ["NumPreopVaccines"] + ros_problem_cols]
+X = X_df.to_numpy()
+dbscan = DBSCAN(eps=0.3, metric="cosine", n_jobs=-1)
+y_dbscan = dbscan.fit_predict(X)
+# Save the prediction as a column
+X_df["y_dbscan"] = y_dbscan
+# Check the distribution
+X_df["y_dbscan"].value_counts()
+#%%
+labels = dbscan.labels_
+n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
+n_noise_ = list(labels).count(-1)
+
+#%%
+# Hierarchical Clustering
+from sklearn.cluster import AgglomerativeClustering
+
+X_df = df.loc[:, ["NumPreopVaccines"] + ros_problem_cols]
+X = X_df.to_numpy()
+hc = AgglomerativeClustering(
+    n_clusters=7,
+    metric="euclidean",
+    linkage="ward",
+    memory=(Path(__file__).parent / "temp").as_posix(),
+)
+y_hc = hc.fit_predict(X)
+# Save the cluster prediciton as a column
+X_df["y_hc"] = y_hc
+# Check the distribution
+X_df["y_hc"].value_counts()
+
+# TODO: Leiden Alg for KNN graph
+#%%
+# NMF for fuzzy clustering/"topic" discovery
+from sklearn.decomposition import NMF
+
+X_df = df.loc[:, ["NumPreopVaccines"] + ros_problem_cols]
+X = X_df.to_numpy()
+# L1 regularization for sparse features in each topic
+n_components = 15
+nmf = NMF(
+    n_components=n_components, init=None, beta_loss="frobenius", l1_ratio=1.0, random_state=42
+)
+# Transformed Data = W; Component Matrix = H
+W = nmf.fit_transform(X)
+H = nmf.components_
+# Each row in H is a Transformed Feature.  Each Col in H is a topic (original feature).
+# So a Transformed feature is a weighted blend of topics/orginal features
+H_df = pd.DataFrame(H, columns=X_df.columns)
+
+# Get Top Topics for each feature
+topic_features = H_df.apply(
+    lambda row: row.sort_values(ascending=False).index.tolist()[:10], axis=1
+)
+topic_features.apply(lambda top_k: ", ".join(top_k)).to_dict()
+# TODO: visualize cluster membership for topic
+#%%
+# Use NIMFA for NMF
+import nimfa
+
+X_df = df.loc[:, ["NumPreopVaccines"] + ros_problem_cols]
+X = X_df.to_numpy()
+nmf = nimfa.Nmf(
+    V=X,
+    seed="nndsvd",
+    rank=10,
+    objective="fro",
+    update="euclidean",
+    max_iter=200,
+)
+nmf_fit = nmf()
+# Samples as weighted topics
+W = nmf_fit.basis()
+# Topics as weighted blend of original features
+H = nmf_fit.coef()
+#%%
+summary = nmf_fit.summary()
+summary.keys()
+
+#%%
+summary["n_iter"]
+#%%
+# Plot Cophenetic Correlation Coefficient vs. NMF rank to determine the optimal
+# Number of factors (soft "clusters") to explain data
+import nimfa
+
+rank_range = range(2, 51)
+n_run = 10
+total = len(rank_range) * n_run
+
+# Define Feature Matrix
+X_df = df.loc[:, ["NumPreopVaccines"] + ros_problem_cols]
+X = X_df.to_numpy()
+# Initialize NMF model & Estimate Rank
+nmf = nimfa.Nmf(
+    V=X,
+    seed="random",
+    objective="fro",
+    update="euclidean",
+    max_iter=200,
+)
+estimate_rank_results = nmf.estimate_rank(rank_range=rank_range, n_run=n_run, what="all")
+cophenetic = [estimate_rank_results[x]["cophenetic"] for x in rank_range]
+# Plot Cophenetic Correlation
+p1 = sns.relplot(
+    x=rank_range,
+    y=cophenetic,
+    kind="line",
+)
+p1.set(
+    title="Cophenetic Correlation Coefficient vs. NMF Rank",
+    xlabel="Number of Components",
+    ylabel="Cophenetic Correlation Coefficient",
+)
+#%%
+estimate_rank_results.keys()
+
+#%%
+# Visualize with UMAP
+import umap
+
+reducer = umap.UMAP(random_state=42)
+embedding = reducer.fit_transform(X)
+# Make Embedding Dataframe
+data = pd.DataFrame(embedding, columns=["UMAP1", "UMAP2"], index=df.index).join(
+    df.NumPreopVaccinesCat
+)
+#%%
+# Add Labels from Clustering
+data["y_hc"] = X_df["y_hc"].astype("category")
+
+# Visualize UMAP + Cluster Labels
+fig, ax = plt.subplots(figsize=(10, 10))
+# sns.scatterplot(data=data, x="UMAP1", y="UMAP2", hue="NumPreopVaccinesCat", edgecolor=None, s=2)
+sns.scatterplot(data=data, x="UMAP1", y="UMAP2", hue="y_hc", edgecolor=None, s=2)
+plt.title("UMAP projection", fontsize=24)
 #%%
 # TODO:
 # 1. pick out top diagnoses (CV, pulm, renal) from ROS/problems_df that we want to examine
