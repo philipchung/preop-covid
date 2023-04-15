@@ -112,9 +112,13 @@ print(f"Num Cases with ROS Problems Marked by Organ Systems: {cases_organ_system
 # Join Vaccines, SDE Problems & Organ Systems Data to original cases table
 # Note: original cases table has all the Elixhauser Comorbidities & Complications
 # as well as time between last PCR+ test and case
+
 # We drop cases where we don't have SDE data
 
-num_preop_vaccines_cat = CategoricalDtype(categories=["0", "1", "2", "3", "4+"], ordered=True)
+num_preop_covid_vaccine_dtype = CategoricalDtype(
+    categories=["0", "1", "2", "3", "4+"], ordered=True
+)
+had_preop_covid_vaccine_dtype = CategoricalDtype(categories=["Yes", "No"], ordered=True)
 
 # Join Vaccines (MPOG_Case_ID without vaccines are unvaccinated)
 df = cases_df.join(covid_vaccines, how="left")
@@ -123,7 +127,10 @@ df.VaccineUUID = [[] if x is np.NaN else x for x in df.VaccineUUID]
 df.VaccineDate = [[] if x is np.NaN else x for x in df.VaccineDate]
 df.NumPreopVaccines = df.NumPreopVaccines.fillna(0).astype(int)
 df["NumPreopVaccinesCat"] = df.NumPreopVaccines.apply(lambda x: "4+" if x >= 4 else f"{x}").astype(
-    num_preop_vaccines_cat
+    num_preop_covid_vaccine_dtype
+)
+df["HadCovidVaccine"] = df.NumPreopVaccines.apply(lambda x: "Yes" if x > 0 else "No").astype(
+    had_preop_covid_vaccine_dtype
 )
 
 # Join SDE Data
@@ -160,10 +167,15 @@ case_cols
 
 #%%
 #%%
-def make_count_percent_plots(
-    data: pd.DataFrame, x: str, hue: str, xlabel: str, title: str
+def make_count_percent_plot(
+    data: pd.DataFrame,
+    x: str,
+    hue: str,
+    xlabel: str,
+    title: str,
+    figsize: tuple[int, int] = (6, 10),
 ) -> tuple[plt.Figure, list[plt.Axes]]:
-    fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+    fig, ax = plt.subplots(nrows=1, ncols=2, figsize=figsize)
     # Count Plot
     sns.histplot(
         data=data,
@@ -173,7 +185,7 @@ def make_count_percent_plots(
         multiple="dodge",
         ax=ax[0],
     )
-    ax[0].set(title="Case Counts", xlabel=xlabel)
+    ax[0].set(title=f"{hue}, Case Counts", xlabel=xlabel)
     for container in ax[0].containers:
         ax[0].bar_label(container, label_type="edge", fmt="%g")
     # Percent Plot
@@ -185,11 +197,61 @@ def make_count_percent_plots(
         multiple="fill",
         ax=ax[1],
     )
-    ax[1].set(title="Percentage of Cases", xlabel=xlabel)
+    ax[1].set(title=f"{hue}, Percentage of Cases", xlabel=xlabel)
     for container in ax[1].containers:
         ax[1].bar_label(container, label_type="center", fmt="%.2f")
     plt.suptitle(title)
     plt.tight_layout()
+    return fig, ax
+
+
+def make_count_percent_plots(
+    data: pd.DataFrame,
+    x: str,
+    hue: str | list[str],
+    xlabel: str,
+    title: str,
+    figsize: tuple[int, int] | None = None,
+) -> tuple[plt.Figure, list[plt.Axes]]:
+    if isinstance(hue, str):
+        figsize = (10, 6) if figsize is None else figsize
+        return make_count_percent_plot(
+            data=data, x=x, hue=hue, xlabel=xlabel, title=title, figsize=figsize
+        )
+    else:
+        figsize = (10, 12) if figsize is None else figsize
+        num_hues = len(hue)
+        fig, ax = plt.subplots(nrows=num_hues, ncols=2, figsize=figsize)
+
+        for idx, h in enumerate(hue):
+            ct_ax = ax[idx, 0]
+            pct_ax = ax[idx, 1]
+            # Count Plot
+            sns.histplot(
+                data=data,
+                x=x,
+                hue=h,
+                stat="count",
+                multiple="dodge",
+                ax=ct_ax,
+            )
+            ct_ax.set(title=f"{h}, Case Counts", xlabel=xlabel)
+            for container in ct_ax.containers:
+                ct_ax.bar_label(container, label_type="edge", fmt="%g")
+            # Percent Plot
+            sns.histplot(
+                data=data,
+                x=x,
+                hue=h,
+                stat="percent",
+                multiple="fill",
+                ax=pct_ax,
+            )
+            pct_ax.set(title=f"{h}, Percentage of Cases", xlabel=xlabel)
+            for container in pct_ax.containers:
+                pct_ax.bar_label(container, label_type="center", fmt="%.2f")
+            plt.suptitle(title)
+            plt.tight_layout()
     return fig, ax
 
 
@@ -203,6 +265,7 @@ fig, ax = make_count_percent_plots(
     xlabel="Number of Preop Covid Vaccines",
     title="Patients with COPD who HadPulmonaryComplication",
 )
+#%%
 # Outcome = CardiacComplication (by case ICD code)
 fig, ax = make_count_percent_plots(
     data=copd,
@@ -443,24 +506,9 @@ topic_name2alias = H_df_norm.apply(
     lambda row: [f"{k}" for k in row.nlargest(1).keys()][0], axis=1
 ).to_dict()
 topic_aliases = [topic_name2alias[n] for n in topic_names]
-#%%
+
 # Put Transformed Data Matrix into a Dataframe
 W_df = pd.DataFrame(data=W, columns=topic_names, index=X_df.index)
-
-# Normalize Transformed Data Matrix by Row so we get % of each Topic
-W_df_norm = W_df.apply(lambda row: row / row.sum(), axis=1)
-# Apply Threshold of 50% for a example to be predominatly explained
-# by a topic.  If this is true, we will "label" these examples
-# by the topic to create a "soft" cluster.
-threshold = 0.10
-mask = W_df_norm.applymap(lambda x: x > threshold)
-
-# Percent of examples in each topic cluster (clusters may overlap)
-percent_topic_clusters = (mask.sum() / mask.shape[0]).rename("DataFraction")
-percent_topic_clusters = pd.DataFrame.from_dict(
-    data=topic_name2alias, orient="index", columns=["TopFeature"]
-).join(percent_topic_clusters)
-percent_topic_clusters
 
 #%%
 # Visualize NMF Topics with UMAP
@@ -549,7 +597,58 @@ p = sns.scatterplot(
     s=2,
 )
 p.set
+#%% [markdown]
+# ## Select Topic Subpopulations Of Interest for Complication Analysis
 #%%
+# TODO:
+# - Mask/Threshold Topics:
+#   - 0: HLD
+#   - 2: GERD
+#   - 3: CHRONIC RENAL DISEASE
+#   - 8: SLEEP APNEA
+#   - 9: HYPERTENSION
+#   - 11: DIABETES
+#   - 12: ASTHMA
+#   - 15: VALVULAR PROBLEMS/MURMURS (& Cardiac)
+#   - 18: LIVER
+#   - 19: PONV
+# - stratify population by:
+#   - covid vaccine (yes/no)
+#   - flu vaccine (yes/no)
+# - examine complications:
+#   - pulmonary
+#   - cardiac
+#   - renal
+#%%
+# Normalize Transformed Data Matrix by Row
+# Interpretation: % of each Topic that makes up each case's ROS
+W_df_norm = W_df.apply(lambda row: row / row.sum(), axis=1)
+# Apply Threshold Cut-off to get a "soft" cluster
+# Note: clusters may overlap & a single case may belong to multiple clusters
+threshold = 0.10  # Cluster membership if >10% of Case's ROS is explained by topic
+mask = W_df_norm.applymap(lambda x: x > threshold)
+
+# Percent of examples in each topic cluster (clusters may overlap)
+percent_topic_clusters = (mask.sum() / mask.shape[0]).rename("DataFraction")
+percent_topic_clusters = pd.DataFrame.from_dict(
+    data=topic_name2alias, orient="index", columns=["TopFeature"]
+).join(percent_topic_clusters)
+percent_topic_clusters
+#%%
+# Plot Complications For Each Topic Cluster of Interest
+topic = "Topic9"
+hld_case_ids = W_df.loc[mask[topic]].index
+hld_df = df.loc[hld_case_ids]
+
+complications = ["HadPulmonaryComplication", "HadCardiacComplication", "HadAKIComplication"]
+fig, ax = make_count_percent_plots(
+    data=hld_df,
+    x="HadCovidVaccine",
+    hue=complications,
+    title=("Complications for " f"{topic}:\n{topic_features_map[topic]}"),
+    xlabel="HadCovidVaccine",
+    figsize=(10, 18),
+)
 #%%
 # TODO:
 # 1. pick out top diagnoses (CV, pulm, renal) from ROS/problems_df that we want to examine
