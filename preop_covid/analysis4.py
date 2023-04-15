@@ -168,40 +168,139 @@ case_cols
 #   (e.g. ICD codes) as defined by MPOG
 
 #%%
-# Cohort = Patients with COPD (in ROS)
-copd = df.loc[df.COPD]
+cohort_name = "Asthma Problem Cohort"
+problems = ["ASTHMA"]
+query = " | ".join(f"`{p}`" for p in problems)
+cohort = df.query(query)
 complications = ["HadPulmonaryComplication", "HadCardiacComplication", "HadAKIComplication"]
 fig, ax = make_count_percent_plots(
-    data=copd,
+    data=cohort,
     x="HadCovidVaccine",
     hue=complications,
     xlabel=None,
-    title="Complications for Patients with COPD",
+    title=f"Complications for {cohort_name}",
     figsize=(10, 18),
 )
 
 #%%
-# Cohort = Patients with COPD or Asthma or Bronchitis or URI (in ROS)
-acute_or_chronic_pulm_dz = df.loc[df.COPD | df.ASTHMA | df.BRONCHITIS | df.URI]
+cohort_name = "COPD, Asthma, Bronchitis, URI Problem Cohort"
+problems = ["COPD", "ASTHMA", "BRONCHITIS", "URI"]
+query = " | ".join(f"`{p}`" for p in problems)
+cohort = df.query(query)
 complications = ["HadPulmonaryComplication", "HadCardiacComplication", "HadAKIComplication"]
 fig, ax = make_count_percent_plots(
-    data=acute_or_chronic_pulm_dz,
+    data=cohort,
     x="HadCovidVaccine",
     hue=complications,
     xlabel=None,
-    title="Complications for Patients with COPD, Asthma, Bronchitis, URI",
+    title=f"Complications for {cohort_name}",
     figsize=(10, 18),
 )
 #%%
-# Cohort = Patient with any Respiratory ROS Comment
-any_respiratory = df.loc[df.RESPIRATORY]
+cohort_name = "Respiratory ROS Comment Cohort"
+problems = ["RESPIRATORY"]
+query = " | ".join(f"`{p}`" for p in problems)
+cohort = df.query(query)
 complications = ["HadPulmonaryComplication", "HadCardiacComplication", "HadAKIComplication"]
 fig, ax = make_count_percent_plots(
-    data=any_respiratory,
+    data=cohort,
     x="HadCovidVaccine",
     hue=complications,
     xlabel=None,
-    title="Complications for Patients with Respiratory ROS Comment",
+    title=f"Complications for {cohort_name}",
+    figsize=(10, 18),
+)
+#%%
+cohort_name = "Diabetes Problem Cohort"
+problems = ["DIABETES"]
+query = " | ".join(f"`{p}`" for p in problems)
+cohort = df.query(query)
+complications = ["HadPulmonaryComplication", "HadCardiacComplication", "HadAKIComplication"]
+fig, ax = make_count_percent_plots(
+    data=cohort,
+    x="HadCovidVaccine",
+    hue=complications,
+    xlabel=None,
+    title=f"Complications for {cohort_name}",
+    figsize=(10, 18),
+)
+#%%
+cohort_name = "Hypertension Problem Cohort"
+problems = ["HYPERTENSION"]
+query = " | ".join(f"`{p}`" for p in problems)
+cohort = df.query(query)
+complications = ["HadPulmonaryComplication", "HadCardiacComplication", "HadAKIComplication"]
+fig, ax = make_count_percent_plots(
+    data=cohort,
+    x="HadCovidVaccine",
+    hue=complications,
+    xlabel=None,
+    title=f"Complications for {cohort_name}",
+    figsize=(10, 18),
+)
+#%%
+cohort_name = "Cardiac Problem Cohort"
+problems = [
+    "ANGINA",
+    "ARRHYTHMIA",
+    "ATRIAL FIBRILLATION",
+    "CAD",
+    "CHF",
+    "CONGENITAL HEART DISEASE",
+    "HYPERLIPIDEMIA",
+    "PAST MI",
+    "VALVULAR PROBLEMS/MURMURS",
+]
+query = " | ".join(f"`{p}`" for p in problems)
+cohort = df.query(query)
+complications = ["HadPulmonaryComplication", "HadCardiacComplication", "HadAKIComplication"]
+fig, ax = make_count_percent_plots(
+    data=cohort,
+    x="HadCovidVaccine",
+    hue=complications,
+    xlabel=None,
+    title=f"Complications for {cohort_name}",
+    figsize=(10, 18),
+)
+
+#%%
+cohort_name = "Renal/Urinary Problem Cohort"
+problems = [
+    "CHRONIC RENAL DISEASE",
+    "GENITOURINARY PROBLEM",
+    "RENAL DISEASE DETAILS",
+    "URINARY TRACT INFECTION",
+]
+query = " | ".join(f"`{p}`" for p in problems)
+cohort = df.query(query)
+complications = ["HadPulmonaryComplication", "HadCardiacComplication", "HadAKIComplication"]
+fig, ax = make_count_percent_plots(
+    data=cohort,
+    x="HadCovidVaccine",
+    hue=complications,
+    xlabel=None,
+    title=f"Complications for {cohort_name}",
+    figsize=(10, 18),
+)
+
+#%%
+cohort_name = "Neurologic Problem Cohort"
+problems = [
+    "CVA",
+    "DEMENTIA",
+    "MULTIPLE SCLEROSIS",
+    "SEIZURE DISORDER",
+    "TIA",
+]
+query = " | ".join(f"`{p}`" for p in problems)
+cohort = df.query(query)
+complications = ["HadPulmonaryComplication", "HadCardiacComplication", "HadAKIComplication"]
+fig, ax = make_count_percent_plots(
+    data=cohort,
+    x="HadCovidVaccine",
+    hue=complications,
+    xlabel=None,
+    title=f"Complications for {cohort_name}",
     figsize=(10, 18),
 )
 #%% [markdown]
@@ -343,6 +442,9 @@ topic_features_norm_df
 topic_features_map_df = topic_features_norm_df.apply(lambda row: "\n".join(row), axis=1).rename(
     "TopicBlend"
 )
+topic_features_map_df2 = topic_features_norm_df.apply(lambda row: ", ".join(row), axis=1).rename(
+    "TopicBlend"
+)
 topic_features_map = topic_features_map_df.to_dict()
 topic_name2alias = H_df_norm.apply(
     lambda row: [f"{k}" for k in row.nlargest(1).keys()][0], axis=1
@@ -393,7 +495,6 @@ topic = f"Topic{topic_num}"
 topic_data = umap_data[topic]
 
 cmap = "viridis"
-fig, ax = plt.subplots(figsize=(10, 10))
 p = sns.scatterplot(
     data=umap_data,
     x="UMAP1",
@@ -466,24 +567,7 @@ p = sns.scatterplot(
 # all the cases into the Topics, which is what many other clustering algorithms do,
 # but rather yield cases that are representative of the Topics within our dataset
 # that we can then use as a cohort for further analysis.
-#%%
-# - Mask/Threshold Topics:
-#   - 0: HLD
-#   - 2: GERD
-#   - 3: CHRONIC RENAL DISEASE
-#   - 8: SLEEP APNEA
-#   - 9: HYPERTENSION
-#   - 11: DIABETES
-#   - 12: ASTHMA
-#   - 15: VALVULAR PROBLEMS/MURMURS (& Cardiac)
-#   - 18: LIVER
-#   - 19: PONV
-# - stratify population by:
-#   - covid vaccine (yes/no)
-# - examine complications:
-#   - pulmonary
-#   - cardiac
-#   - renal
+
 #%%
 # Normalize Transformed Data Matrix by Row
 # Interpretation: % of each Topic that makes up each case's ROS
@@ -492,26 +576,28 @@ W_df_norm = W_df.apply(lambda row: row / row.sum(), axis=1)
 # Note: clusters may overlap & a single case may belong to multiple clusters
 threshold = 0.10  # Cluster membership if >10% of Case's ROS is explained by topic
 mask = W_df_norm.applymap(lambda x: x > threshold)
-
 # Percent of examples in each topic cluster (clusters may overlap)
-percent_topic_clusters = (mask.sum() / mask.shape[0]).rename("DataFraction")
-percent_topic_clusters = pd.DataFrame.from_dict(
-    data=topic_name2alias, orient="index", columns=["TopFeature"]
-).join(percent_topic_clusters)
+percent_topic_clusters = (mask.sum() / mask.shape[0]).rename("FractionOfCases")
+percent_topic_clusters = (
+    pd.DataFrame.from_dict(data=topic_name2alias, orient="index", columns=["TopFeature"])
+    .join(topic_features_map_df2)
+    .join(percent_topic_clusters)
+)
 percent_topic_clusters
 #%%
 # Plot Complications For Each Topic Cluster of Interest
-topic = "Topic9"
-hld_case_ids = W_df.loc[mask[topic]].index
-hld_df = df.loc[hld_case_ids]
+for topic in topic_names:
+    # topic = "Topic9"
+    hld_case_ids = W_df.loc[mask[topic]].index
+    hld_df = df.loc[hld_case_ids]
 
-complications = ["HadPulmonaryComplication", "HadCardiacComplication", "HadAKIComplication"]
-fig, ax = make_count_percent_plots(
-    data=hld_df,
-    x="HadCovidVaccine",
-    hue=complications,
-    title=("Complications for " f"{topic}:\n{topic_features_map[topic]}"),
-    xlabel="HadCovidVaccine",
-    figsize=(10, 18),
-)
+    complications = ["HadPulmonaryComplication", "HadCardiacComplication", "HadAKIComplication"]
+    fig, ax = make_count_percent_plots(
+        data=hld_df,
+        x="HadCovidVaccine",
+        hue=complications,
+        title=("Complications for " f"{topic}:\n{topic_features_map[topic]}"),
+        xlabel="HadCovidVaccine",
+        figsize=(10, 18),
+    )
 #%%
