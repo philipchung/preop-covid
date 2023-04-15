@@ -335,18 +335,24 @@ topic_features = H_df.apply(
 )
 topic_features.apply(lambda top_k: ", ".join(top_k)).to_dict()
 # TODO: visualize cluster membership for topic
+#%% [markdown]
+# ## NMF Using Nimfa Library
 #%%
 # Plot Cophenetic Correlation Coefficient vs. NMF rank to determine the optimal
 # Number of factors (soft "clusters") to explain data
 # (this computation takes a very long time)
+import time
+
 import nimfa
+
+start = time.time()
 
 rank_range = range(2, 51)
 n_run = 10
 total = len(rank_range) * n_run
 
 # Define Feature Matrix
-X_df = df.loc[:, ["NumPreopVaccines"] + ros_problem_cols]
+X_df = df.loc[:, ros_problem_cols]
 X = X_df.to_numpy()
 # Initialize NMF model & Estimate Rank
 nmf = nimfa.Nmf(
@@ -358,6 +364,9 @@ nmf = nimfa.Nmf(
 )
 estimate_rank_results = nmf.estimate_rank(rank_range=rank_range, n_run=n_run, what="all")
 cophenetic = [estimate_rank_results[x]["cophenetic"] for x in rank_range]
+
+print(f"Estimate Rank Took: {time.time() - start} seconds")
+
 # Plot Cophenetic Correlation
 p1 = sns.relplot(
     x=rank_range,
@@ -376,7 +385,7 @@ estimate_rank_df = pd.DataFrame.from_dict(data=estimate_rank_results, orient="in
 estimate_rank_df
 #%%
 # Save Dataframe as Pickle
-nmf_est_rank_path = data_dir / "v2" / "processed" / "nmf_estimate_rank1.pickle"
+nmf_est_rank_path = data_dir / "v2" / "processed" / "nmf_estimate_rank2.pickle"
 estimate_rank_df.to_pickle(path=nmf_est_rank_path)
 #%%
 # Read Pickled Dataframe it back to memory and transform it back into a dict
@@ -388,12 +397,12 @@ nmf_rank_est_dict
 # Use NIMFA for NMF
 import nimfa
 
-X_df = df.loc[:, ["NumPreopVaccines"] + ros_problem_cols]
+X_df = df.loc[:, ros_problem_cols]
 X = X_df.to_numpy()
 nmf = nimfa.Nmf(
     V=X,
     seed="nndsvd",
-    rank=30,
+    rank=20,
     objective="fro",
     update="euclidean",
     max_iter=200,
@@ -403,10 +412,7 @@ nmf_fit = nmf()
 W = nmf_fit.basis()
 # Component Matrix: Topics as weighted blend of original features
 H = nmf_fit.coef()
-#%%
-summary = nmf_fit.summary()
-summary.keys()
-#%%
+
 # Each row in H is a Topic.  Each Col in H is the original feature).
 # Topics are a blend of the original features
 topic_names = [f"Topic{k}" for k in range(H.shape[0])]
@@ -415,8 +421,6 @@ H_df = pd.DataFrame(
     columns=X_df.columns,
     index=topic_names,
 )
-H_df
-#%%
 # Get Top 5 features for each topic & the percent each feature contributes to the topic
 # Normalize the component matrix by each topic
 H_df_norm = H_df.apply(lambda row: row / row.sum(), axis=1)
@@ -430,63 +434,122 @@ topic_features_norm_df = pd.DataFrame.from_dict(
     orient="index",
     columns=[f"TopFeature{k+1}" for k in range(5)],
 )
-topic_features_norm_df
-# %%
 # Create mapping between topic name and a topic "alias"/identity
+topic_features_map_df = topic_features_norm_df.apply(lambda row: "\n".join(row), axis=1).rename(
+    "TopicBlend"
+)
+topic_features_map = topic_features_map_df.to_dict()
 topic_name2alias = H_df_norm.apply(
     lambda row: [f"{k}" for k in row.nlargest(1).keys()][0], axis=1
 ).to_dict()
-topic_name2alias
+topic_aliases = [topic_name2alias[n] for n in topic_names]
 #%%
 # Put Transformed Data Matrix into a Dataframe
-W_df = pd.DataFrame(data=W, columns=[topic_name2alias[n] for n in topic_names], index=X_df.index)
+W_df = pd.DataFrame(data=W, columns=topic_names, index=X_df.index)
 
 # Normalize Transformed Data Matrix by Row so we get % of each Topic
 W_df_norm = W_df.apply(lambda row: row / row.sum(), axis=1)
 # Apply Threshold of 50% for a example to be predominatly explained
 # by a topic.  If this is true, we will "label" these examples
 # by the topic to create a "soft" cluster.
-threshold = 0.25
+threshold = 0.10
 mask = W_df_norm.applymap(lambda x: x > threshold)
-#%%
-# How many examples in each cluster
-mask.sum()
-#%%
-# How many examples not in each cluster
-(mask is not True).sum()
+
+# Percent of examples in each topic cluster (clusters may overlap)
+percent_topic_clusters = (mask.sum() / mask.shape[0]).rename("DataFraction")
+percent_topic_clusters = pd.DataFrame.from_dict(
+    data=topic_name2alias, orient="index", columns=["TopFeature"]
+).join(percent_topic_clusters)
+percent_topic_clusters
 
 #%%
-
-#%%
-# Visualize with UMAP
+# Visualize NMF Topics with UMAP
 import umap
 
+# Compute 2 Dimensional UMAP Embeddings for visualization (from original 77 Feature Dimensions)
 reducer = umap.UMAP(random_state=42)
 embedding = reducer.fit_transform(X)
 #%%
+# Normalize Transformed Data Matrix by Column so Each Topic is scaled from 0-1
+W_df_col_norm = (W_df - W_df.min()) / (W_df.max() - W_df.min())
+
 # Make Embedding Dataframe
-data = (
+umap_data = (
     pd.DataFrame(embedding, columns=["UMAP1", "UMAP2"], index=df.index)
     .join(df.NumPreopVaccinesCat)
-    .join(mask)
+    .join(W_df_col_norm)
+)
+
+# Melt Topics to Long Table Format
+umap_data_long = pd.melt(
+    umap_data,
+    id_vars=["UMAP1", "UMAP2", "NumPreopVaccinesCat"],
+    value_vars=topic_names,
+    var_name="Topic",
+    value_name="Value",
+)
+umap_data_long = umap_data_long.merge(
+    topic_features_map_df, how="left", left_on="Topic", right_index=True
+)
+umap_data_long["Title"] = umap_data_long.apply(
+    lambda row: f"{row.Topic}:\n{row.TopicBlend}", axis=1
 )
 #%%
-# Add Labels from Clustering
-# data["y_hc"] = X_df["y_hc"].astype("category")
-
 # Visualize UMAP + Cluster Labels
 fig, ax = plt.subplots(figsize=(10, 10))
 # sns.scatterplot(data=data, x="UMAP1", y="UMAP2", hue="NumPreopVaccinesCat", edgecolor=None, s=2)
-sns.scatterplot(
-    data=data,
+topic_num = 11
+topic = f"Topic{topic_num}"
+topic_data = umap_data[topic]
+cmap = "Spectral"
+p = sns.scatterplot(
+    data=umap_data,
     x="UMAP1",
     y="UMAP2",
-    hue="HYPERTENSION",
-    palette=["yellow", "gray"],
+    hue=topic,
+    palette=cmap,
     edgecolor=None,
     s=2,
 )
-plt.title("UMAP projection", fontsize=24)
+norm = plt.Normalize(0, 1)
+sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+p.get_legend().remove()
+p.figure.colorbar(sm, format=lambda x, _: f"{x:.0%}")
+plt.title(f"{topic}:\n{topic_features_map[topic]}", fontsize=12)
+
+#%%
+# UMAP Plot Facet Grid for NMF ROS, Highlighting Magnitude of Each Topic for Each Case
+cmap = "viridis"
+g = sns.relplot(
+    kind="scatter",
+    data=umap_data_long,
+    x="UMAP1",
+    y="UMAP2",
+    hue="Value",
+    col="Title",
+    col_wrap=4,
+    palette=cmap,
+    edgecolor=None,
+    s=2,
+    legend=False,
+)
+cbar_ax = g.fig.add_axes([1.015, 0.25, 0.015, 0.5])
+norm = plt.Normalize(0, 1)
+sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+g.figure.colorbar(sm, cax=cbar_ax, format=lambda x, _: f"{x:.0%}")
+g.set_titles(col_template="{col_name}")
+#%%
+p = sns.scatterplot(
+    data=umap_data,
+    x="UMAP1",
+    y="UMAP2",
+    hue="NumPreopVaccinesCat",
+    palette=cmap,
+    edgecolor=None,
+    s=2,
+)
+p.set
+#%%
 #%%
 # TODO:
 # 1. pick out top diagnoses (CV, pulm, renal) from ROS/problems_df that we want to examine
