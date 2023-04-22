@@ -50,6 +50,30 @@ class CaseData:
         ],
         ordered=True,
     )
+    mpog_pulmonary_complication_category: CategoricalDtype = CategoricalDtype(
+        categories=["Yes", "No", "Unknown"], ordered=True
+    )
+    mpog_pulmonary_complication_category2: CategoricalDtype = CategoricalDtype(
+        categories=["Yes", "No"], ordered=True
+    )
+    mpog_cardiac_complication_category: CategoricalDtype = CategoricalDtype(
+        categories=["Yes", "No", "Unknown"], ordered=True
+    )
+    mpog_cardiac_complication_category2: CategoricalDtype = CategoricalDtype(
+        categories=["Yes", "No"], ordered=True
+    )
+    mpog_mi_complication_category: CategoricalDtype = CategoricalDtype(
+        categories=[True, False], ordered=True
+    )
+    mpog_mi_complication_category2: CategoricalDtype = CategoricalDtype(
+        categories=["Yes", "No"], ordered=True
+    )
+    mpog_aki_complication_category: CategoricalDtype = CategoricalDtype(
+        categories=["AKI", "No AKI", "Pre-existing ESRD", "Unknown"], ordered=True
+    )
+    mpog_aki_complication_category2: CategoricalDtype = CategoricalDtype(
+        categories=["AKI", "No AKI", "Pre-existing ESRD"], ordered=True
+    )
 
     def __post_init__(self) -> pd.DataFrame:
         "Called upon object instance creation."
@@ -220,7 +244,10 @@ class CaseData:
 
         had_pulm_complication = _df.ComplicationAHRQPulmonaryAll_Value.apply(
             clean_pulm_complication_presence
-        )
+        ).astype(self.mpog_pulmonary_complication_category)
+        had_pulm_complication2 = had_pulm_complication.apply(
+            lambda x: "Yes" if x == "Yes" else "No"
+        ).astype(self.mpog_pulmonary_complication_category2)
 
         ## Cardiac Complications
 
@@ -236,10 +263,14 @@ class CaseData:
 
         had_cardiac_complication = _df.ComplicationAHRQCardiac_Value.apply(
             clean_cardiac_complication_presence
-        )
-        had_myocardial_infarction = _df.ComplicationAHRQMyocardialInfarction_Value.apply(
+        ).astype(self.mpog_cardiac_complication_category)
+        had_cardiac_complication2 = had_cardiac_complication.apply(
+            lambda x: "Yes" if x == "Yes" else "No"
+        ).astype(self.mpog_cardiac_complication_category2)
+        had_mi_complication = _df.ComplicationAHRQMyocardialInfarction_Value.apply(
             lambda value: True if value == "YES" else False
-        ).astype(bool)
+        ).astype(self.mpog_mi_complication_category)
+        had_mi_complication2 = had_mi_complication.apply(lambda x: "Yes" if bool(x) else "No")
 
         ## Renal Complications
         # Reference: https://phenotypes.mpog.org/MPOG%20Complication%20-%20Acute%20Kidney%20Injury%20(AKI)
@@ -256,14 +287,23 @@ class CaseData:
             else:
                 raise ValueError(f"Unknown value {value} for clean_aki_complication_presence")
 
-        had_aki = _df.ComplicationMpogAcuteKidneyInjury_Value.apply(clean_aki_complication_presence)
+        had_aki_complication = _df.ComplicationMpogAcuteKidneyInjury_Value.apply(
+            clean_aki_complication_presence
+        ).astype(self.mpog_aki_complication_category)
+        had_aki_complication2 = had_aki_complication.apply(
+            lambda x: "No AKI" if x in ("Unknown", "No AKI") else x
+        ).astype(self.mpog_aki_complication_category2)
 
         complications_df = pd.DataFrame(
             data={
-                "HadAKIComplication": had_aki,
+                "HadAKIComplication": had_aki_complication,
+                "HadAKIComplication2": had_aki_complication2,
                 "HadCardiacComplication": had_cardiac_complication,
-                "HadMyocardialInfarctionComplication": had_myocardial_infarction,
+                "HadCardiacComplication2": had_cardiac_complication2,
+                "HadMyocardialInfarctionComplication": had_mi_complication,
+                "HadMyocardialInfarctionComplication2": had_mi_complication2,
                 "HadPulmonaryComplication": had_pulm_complication,
+                "HadPulmonaryComplication2": had_pulm_complication2,
                 "PulmonaryComplicationICD": pulm_icd_codes,
             },
             index=_df.index,
