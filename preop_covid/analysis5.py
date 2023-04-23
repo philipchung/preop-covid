@@ -335,27 +335,6 @@ umap_data_long = umap_data_long.merge(
 umap_data_long["Title"] = umap_data_long.apply(
     lambda row: f"{row.Topic}:\n{row.TopicBlend}", axis=1
 )
-# %%
-# Visualize UMAP for a single topic
-topic_num = 11
-topic = f"Topic{topic_num}"
-topic_data = umap_data[topic]
-
-cmap = "viridis"
-p = sns.scatterplot(
-    data=umap_data,
-    x="UMAP1",
-    y="UMAP2",
-    hue=topic,
-    palette=cmap,
-    edgecolor=None,
-    s=2,
-)
-norm = plt.Normalize(0, 1)
-sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-p.get_legend().remove()
-p.figure.colorbar(sm, format=lambda x, _: f"{x:.0%}")
-plt.title(f"{topic}:\n{topic_features_map[topic]}", fontsize=12)
 
 # %%
 # UMAP Plot Facet Grid for NMF ROS, Highlighting Magnitude of Each Topic for Each Case
@@ -385,18 +364,6 @@ g.set_titles(col_template="{col_name}")
 # for the Topic phenotype and others who are only partial matches (green color)
 # NOTE: superposition of different Topics on the same region of UMAP indicate
 # populations where both Topics are present.
-# %%
-# Visualize cases that had COVID vaccine vs not.
-p = sns.scatterplot(
-    data=umap_data,
-    x="UMAP1",
-    y="UMAP2",
-    hue="HadCovidVaccine",
-    palette=cmap,
-    edgecolor=None,
-    s=2,
-)
-# NOTE: cases with no COVID vaccine are distributed across the entirety of UMAP.
 
 # %% [markdown]
 # ### Select Topic Subpopulations Of Interest for Complication Analysis
@@ -490,7 +457,25 @@ percent_topic_clusters
 # %% [markdown]
 # ## For Each Topic Cluster of Patients Compute Odds Ratio of Having a Complication vs. Covid Vaccination Status
 #
+# Each topic cluster is a subpopulation of patients based on a clinical phenotype (the Topic).
+# For each subpopulation, we can then conduct a retrospective case-control study.
+# * Case: Patients who have received at least 1 COVID vaccine
+# * Control: Patients who have not received COVID vaccine
 #
+# We then measure the odds of complication occuring.  The MPOG Database documents 4 types of complications that
+# we can look at.
+# * Pulmonary Complication (composite metric): https://phenotypes.mpog.org/AHRQ%20Complication%20-%20Pulmonary%20-%20All
+# * Cardiac Complication (composite metric) [not publically documented on MPOG website]
+# * Myocardial Infarction Complication [not publically documented on MPOG website]
+# * AKI Complication: https://phenotypes.mpog.org/MPOG%20Complication%20-%20Acute%20Kidney%20Injury%20(AKI)
+#
+# Odds Ratio = odds of complication in the vaccinated group / odds of complication in unvaccinated group
+#
+# Interpretation of Odds Ratio:
+# * Odds Ratio = 1: No difference between groups
+# * Odds Ratio < 1: Vaccinated group has lower complications
+# * Odds Ratio > 1: Vaccinated group has more complications
+
 # %%
 import statsmodels.api as sm
 
