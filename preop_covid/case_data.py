@@ -72,7 +72,7 @@ class CaseData:
         categories=["AKI", "No AKI", "Pre-existing ESRD", "Unknown"], ordered=True
     )
     mpog_aki_complication_category2: CategoricalDtype = CategoricalDtype(
-        categories=["AKI", "No AKI", "Pre-existing ESRD"], ordered=True
+        categories=["Yes", "No"], ordered=True
     )
 
     def __post_init__(self) -> pd.DataFrame:
@@ -245,6 +245,8 @@ class CaseData:
         had_pulm_complication = _df.ComplicationAHRQPulmonaryAll_Value.apply(
             clean_pulm_complication_presence
         ).astype(self.mpog_pulmonary_complication_category)
+        # NOTE: had_pulm_complication2 binarizes the complication variable with assumptions:
+        # - "Unknown" patients are treated as "No"
         had_pulm_complication2 = had_pulm_complication.apply(
             lambda x: "Yes" if x == "Yes" else "No"
         ).astype(self.mpog_pulmonary_complication_category2)
@@ -264,12 +266,16 @@ class CaseData:
         had_cardiac_complication = _df.ComplicationAHRQCardiac_Value.apply(
             clean_cardiac_complication_presence
         ).astype(self.mpog_cardiac_complication_category)
+        # NOTE: had_cardiac_complication2 binarizes the complication variable with assumptions:
+        # - "Unknown" patients are treated as "No"
         had_cardiac_complication2 = had_cardiac_complication.apply(
             lambda x: "Yes" if x == "Yes" else "No"
         ).astype(self.mpog_cardiac_complication_category2)
         had_mi_complication = _df.ComplicationAHRQMyocardialInfarction_Value.apply(
             lambda value: True if value == "YES" else False
         ).astype(self.mpog_mi_complication_category)
+        # NOTE: had_mi_complication2 binarizes the complication variable with assumptions:
+        # - "Unknown" patients are treated as "No"
         had_mi_complication2 = had_mi_complication.apply(lambda x: "Yes" if bool(x) else "No")
 
         ## Renal Complications
@@ -290,8 +296,11 @@ class CaseData:
         had_aki_complication = _df.ComplicationMpogAcuteKidneyInjury_Value.apply(
             clean_aki_complication_presence
         ).astype(self.mpog_aki_complication_category)
+        # NOTE: had_aki_complication2 binarizes the complication variable with assumptions:
+        # - "Unknown" patients are treated as "No AKI"
+        # - "ESRD" patients are treated as "No AKI" because true ESRD can't get another AKI
         had_aki_complication2 = had_aki_complication.apply(
-            lambda x: "No AKI" if x in ("Unknown", "No AKI") else x
+            lambda x: "Yes" if x == "AKI" else "No"
         ).astype(self.mpog_aki_complication_category2)
 
         complications_df = pd.DataFrame(
