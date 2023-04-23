@@ -6,6 +6,7 @@ import nimfa
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import statsmodels.api as sm
 import umap
 from pandas.api.types import CategoricalDtype
 
@@ -13,6 +14,10 @@ from preop_covid.case_data import CaseData
 from preop_covid.lab_data import LabData
 from preop_covid.preop_data import PreopSDE
 from preop_covid.vaccine_data import VaccineData
+
+# Display only 2 significant figures for decimals & p-value
+# Will switch to using scientific notation if more sig figs
+pd.options.display.float_format = "{:.2g}".format
 
 # Define data paths and directories
 project_dir = Path("/Users/chungph/Developer/preop-covid")
@@ -78,7 +83,7 @@ covid_vaccines = pd.merge(
 covid_vaccines = covid_vaccines.loc[covid_vaccines.AnesStart > covid_vaccines.VaccineDate]
 # Aggregate Multiple Pre-op Vaccines for each MPOG_Case_ID into a list
 # so we have 1 row per MPOG_Case_ID
-covid_vaccines = covid_vaccines.groupby("MPOG_Case_ID")["VaccineUUID", "VaccineDate"].agg(
+covid_vaccines = covid_vaccines.groupby("MPOG_Case_ID")[["VaccineUUID", "VaccineDate"]].agg(
     {"VaccineUUID": list, "VaccineDate": list}
 )
 covid_vaccines["NumPreopVaccines"] = covid_vaccines.VaccineUUID.apply(len)
@@ -354,8 +359,8 @@ g = sns.relplot(
 )
 cbar_ax = g.fig.add_axes([1.015, 0.25, 0.015, 0.5])
 norm = plt.Normalize(0, 1)
-sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-g.figure.colorbar(sm, cax=cbar_ax, format=lambda x, _: f"{x:.0%}")
+scalar_mappable = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+g.figure.colorbar(scalar_mappable, cax=cbar_ax, format=lambda x, _: f"{x:.0%}")
 g.set_titles(col_template="{col_name}")
 
 # NOTE: you can see how our Topics are grouped within certain topics.  Because
@@ -373,8 +378,13 @@ g.set_titles(col_template="{col_name}")
 #
 # Each case is a blend of Topics--we can convert the contribution of Topics to a case
 # such that all the 20 topics all add up to 100%.
-# We empirically choose a threshold of 10%--that is if >10% of a Cases's ROS is explained
-# by a specific topic, we say that the case belongs to the Topic cluster.
+# We empirically choose a threshold=**25%**.
+# **This means that a clinical phenotype is determined to be present for a patient if >25%
+# of the Cases' ROS is explained by that clinical phenotype.**  This threshold converts
+# the soft/fuzzy clusters into a discrete subpopulation of patients associated with the
+# clinical phenotype.  This threshold allows for multiple clinical phenotypes to be
+# present, but also requires a large portion of the patient’s ROS to be explained by
+# the phenotype.
 #
 # Note that by this definition, it is possible for a Case to be in multiple Topic clusters.
 # It is possible for a Case to not be in any Topic clusters.  The goal is not to force
@@ -388,96 +398,38 @@ g.set_titles(col_template="{col_name}")
 W_df_norm = W_df.apply(lambda row: row / row.sum(), axis=1)
 # Apply Threshold Cut-off to get a "soft" cluster
 # Note: clusters may overlap & a single case may belong to multiple clusters
-threshold = 0.10  # Cluster membership if >10% of Case's ROS is explained by topic
+threshold = 0.25  # Cluster membership if >10% of Case's ROS is explained by topic
 mask = W_df_norm.applymap(lambda x: x > threshold)
 # Percent of examples in each topic cluster (clusters may overlap)
-percent_topic_clusters = (mask.sum() / mask.shape[0]).rename("FractionOfCases")
-percent_topic_clusters = (
-    pd.DataFrame.from_dict(data=topic_name2alias, orient="index", columns=["TopFeature"])
-    .join(topic_features_map_df2)
-    .join(percent_topic_clusters)
-)
-percent_topic_clusters
-# %%
-# Plot Complications For Each Topic Cluster of Interest
-# for topic in topic_names:
-#     hld_case_ids = W_df.loc[mask[topic]].index
-#     hld_df = df.loc[hld_case_ids]
+num_case = mask.sum().rename("NumCases")
+percent_case = (mask.sum() / mask.shape[0]).rename("FractionOfCases")
+pd.DataFrame.from_dict(data=topic_name2alias, orient="index", columns=["TopFeature"]).join(
+    topic_features_map_df2
+).join(num_case).join(percent_case)
 
-#     complications = ["HadPulmonaryComplication", "HadCardiacComplication", "HadAKIComplication"]
-#     complications2 = [f"{complication}2" for complication in complications]
-#     fig, ax = make_count_percent_plots(
-#         data=hld_df,
-#         x="HadCovidVaccine",
-#         hue=complications2,
-#         title=("Complications for " f"{topic}:\n{topic_features_map[topic]}"),
-#         xlabel="HadCovidVaccine",
-#         figsize=(10, 18),
-#     )
-# %%
-# Plot Only Pulmonary Complications
-# for topic in topic_names:
-#     hld_case_ids = W_df.loc[mask[topic]].index
-#     hld_df = df.loc[hld_case_ids]
-
-#     fig, ax = make_count_percent_plots(
-#         data=hld_df,
-#         x="HadCovidVaccine",
-#         hue="HadPulmonaryComplication2",
-#         title=("Complications for " f"{topic}:\n{topic_features_map[topic]}"),
-#         xlabel="HadCovidVaccine",
-#         # figsize=(10, 18),
-#     )
-
-# %%
-# Significant Difference in incidence of pulmonary complication (vaccinated --> unvaccinated)
-# - Topic1 (Psych/Anxiety/Depression): 0.02->0.04
-# - Topic3 (Renal Disease): 0.09->0.15
-# - Topic8 (Sleep Apnea):  0.02->0.05
-# - Topic9 (HTN): 0.05->0.07
-# - Topic10 (Anemia, Thrombocytopenia): 0.09->0.17
-# - Topic11 (Diabetes, HTN): 0.06->0.10
-# - Topic15 (Valvular Problem, CAD, A-fib, CHF, Prior MI): 0.07->0.10
-# - Topic18 (Liver, Thrombocytopenia): 0.05->0.10
-
-# Moderate Difference in incidence of pulmonary complication (vaccinated --> unvaccinated)
-# - Topic0 (HLD, HTN): 0.03->0.05
-# - Topic12 (Asthma, COPD): 0.02->0.03
-# - Topic13 (Chronic Pain, Spine Disorder): 0.03->0.05
-# - Topic14 (Eye Problem, Glaucoma, Ear Problem): 0.02->0.03
-# - Topic16 (Hypothyroidism, Autoimmune Disease): 0.03->0.04
-# - Topic17 (Neuromuscular Disease, Peripheral Nerve Disorder): 0.03->0.05
-
-# No difference in pulmonary complication incidence (vaccinated --> unvaccinated)
-# - Topic2 (GERD): 0.03->0.03
-# - Topic4 (Cancer): 0.02->0.02
-# - Topic5 (GU Problem): 0.02->0.02
-# - Topic6 (Osteoarthritis): 0.02->0.02
-# - Topic7 (Vision Problem, Ear Problem): 0.02->0.02
 # %% [markdown]
-# ## For Each Topic Cluster of Patients Compute Odds Ratio of Having a Complication vs. Covid Vaccination Status
+# ## For Each Topic Cluster: Odds Ratio of Having a Complication vs. Covid Vaccination Status
 #
 # Each topic cluster is a subpopulation of patients based on a clinical phenotype (the Topic).
 # For each subpopulation, we can then conduct a retrospective case-control study.
 # * Case: Patients who have received at least 1 COVID vaccine
 # * Control: Patients who have not received COVID vaccine
 #
-# We then measure the odds of complication occuring.  The MPOG Database documents 4 types of complications that
-# we can look at.
-# * Pulmonary Complication (composite metric): https://phenotypes.mpog.org/AHRQ%20Complication%20-%20Pulmonary%20-%20All
-# * Cardiac Complication (composite metric) [not publically documented on MPOG website]
-# * Myocardial Infarction Complication [not publically documented on MPOG website]
+# We then measure the odds of complication occuring.  The MPOG Database documents 4 types
+# of complications that we can look at.
+# * Pulmonary Complication: https://phenotypes.mpog.org/AHRQ%20Complication%20-%20Pulmonary%20-%20All
+# * Cardiac Complication: [not publically documented on MPOG website]
+# * Myocardial Infarction Complication: [not publically documented on MPOG website]
 # * AKI Complication: https://phenotypes.mpog.org/MPOG%20Complication%20-%20Acute%20Kidney%20Injury%20(AKI)
 #
-# Odds Ratio = odds of complication in the vaccinated group / odds of complication in unvaccinated group
+# Odds Ratio = odds of complication in vaccinated / odds of complication in unvaccinated
 #
 # Interpretation of Odds Ratio:
 # * Odds Ratio = 1: No difference between groups
-# * Odds Ratio < 1: Vaccinated group has lower complications
-# * Odds Ratio > 1: Vaccinated group has more complications
+# * Odds Ratio > 1: Unvaccinated group has more complications
+# * Odds Ratio < 1: Unvaccinated group has fewer complications
 
 # %%
-import statsmodels.api as sm
 
 
 def compute_odds_ratio_and_chisquared(
@@ -486,9 +438,11 @@ def compute_odds_ratio_and_chisquared(
     var2: str,
     topics: list[str],
     alpha: float = 0.05,
+    statistical_significance_threshold: float = 0.05,
     null_odds: float = 1.0,
     var1_pos_name: str = "Yes",
     var2_pos_name: str = "Yes",
+    invert_odds_ratios: bool = False,
 ) -> pd.DataFrame:
     _df = df.copy()
     # Get only relevant columns
@@ -505,6 +459,13 @@ def compute_odds_ratio_and_chisquared(
         odds_ratio = t22.oddsratio
         odds_ratio_lcb, odds_ratio_ucb = t22.oddsratio_confint(alpha=alpha)
         odds_ratio_pvalue = t22.oddsratio_pvalue(null=null_odds)
+        significant = odds_ratio_pvalue < statistical_significance_threshold
+        if invert_odds_ratios:
+            odds_ratio = 1 / odds_ratio
+            odds_ratio_lcb = 1 / odds_ratio_lcb
+            odds_ratio_ucb = 1 / odds_ratio_ucb
+            # Swap values since inverting flips LCB & UCB
+            odds_ratio_lcb, odds_ratio_ucb = odds_ratio_ucb, odds_ratio_lcb
         # Chi-squared test of independence
         chi_squared = t22.test_nominal_association()
         # Support
@@ -520,6 +481,7 @@ def compute_odds_ratio_and_chisquared(
             "OddsRatio_LCB": odds_ratio_lcb,
             "OddsRatio_UCB": odds_ratio_ucb,
             "OddsRatio_pvalue": odds_ratio_pvalue,
+            "Significant": significant,
             "ChiSquared_statistic": chi_squared.statistic,
             "ChiSquared_df": chi_squared.df,
             "ChiSquared_pvalue": chi_squared.pvalue,
@@ -534,8 +496,11 @@ topic_statistics = compute_odds_ratio_and_chisquared(
     var1="HadPulmonaryComplication2",
     var2="HadCovidVaccine",
     topics=mask.columns,
+    invert_odds_ratios=True,
 )
-topic_features_map_df2.to_frame().join(topic_statistics)
+topic_statistics = topic_features_map_df2.to_frame().join(topic_statistics)
+# Display only Statistically Significant Topics
+topic_statistics.loc[topic_statistics.Significant]
 
 # %%
 print("Odds Ratios of Having a Cardiac Complication if has had at least 1 Covid Vaccine")
@@ -544,8 +509,11 @@ topic_statistics = compute_odds_ratio_and_chisquared(
     var1="HadCardiacComplication2",
     var2="HadCovidVaccine",
     topics=mask.columns,
+    invert_odds_ratios=True,
 )
-topic_features_map_df2.to_frame().join(topic_statistics)
+topic_statistics = topic_features_map_df2.to_frame().join(topic_statistics)
+# Display only Statistically Significant Topics
+topic_statistics.loc[topic_statistics.Significant]
 # %%
 print(
     "Odds Ratios of Having a Myocardial Infarction Complication if has had at least 1 Covid Vaccine"
@@ -555,8 +523,11 @@ topic_statistics = compute_odds_ratio_and_chisquared(
     var1="HadMyocardialInfarctionComplication2",
     var2="HadCovidVaccine",
     topics=mask.columns,
+    invert_odds_ratios=True,
 )
-topic_features_map_df2.to_frame().join(topic_statistics)
+topic_statistics = topic_features_map_df2.to_frame().join(topic_statistics)
+# Display only Statistically Significant Topics
+topic_statistics.loc[topic_statistics.Significant]
 # %%
 print("Odds Ratios of Having a AKI Complication if has had at least 1 Covid Vaccine")
 topic_statistics = compute_odds_ratio_and_chisquared(
@@ -564,6 +535,9 @@ topic_statistics = compute_odds_ratio_and_chisquared(
     var1="HadAKIComplication2",
     var2="HadCovidVaccine",
     topics=mask.columns,
+    invert_odds_ratios=True,
 )
-topic_features_map_df2.to_frame().join(topic_statistics)
+topic_statistics = topic_features_map_df2.to_frame().join(topic_statistics)
+# Display only Statistically Significant Topics
+topic_statistics.loc[topic_statistics.Significant]
 # %%
