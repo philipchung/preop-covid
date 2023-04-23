@@ -12,7 +12,6 @@ from pandas.api.types import CategoricalDtype
 from preop_covid.case_data import CaseData
 from preop_covid.lab_data import LabData
 from preop_covid.preop_data import PreopSDE
-from preop_covid.utils.plotting import make_count_percent_plots
 from preop_covid.vaccine_data import VaccineData
 
 # Define data paths and directories
@@ -434,34 +433,34 @@ percent_topic_clusters = (
 percent_topic_clusters
 # %%
 # Plot Complications For Each Topic Cluster of Interest
-for topic in topic_names:
-    hld_case_ids = W_df.loc[mask[topic]].index
-    hld_df = df.loc[hld_case_ids]
+# for topic in topic_names:
+#     hld_case_ids = W_df.loc[mask[topic]].index
+#     hld_df = df.loc[hld_case_ids]
 
-    complications = ["HadPulmonaryComplication", "HadCardiacComplication", "HadAKIComplication"]
-    complications2 = [f"{complication}2" for complication in complications]
-    fig, ax = make_count_percent_plots(
-        data=hld_df,
-        x="HadCovidVaccine",
-        hue=complications2,
-        title=("Complications for " f"{topic}:\n{topic_features_map[topic]}"),
-        xlabel="HadCovidVaccine",
-        figsize=(10, 18),
-    )
+#     complications = ["HadPulmonaryComplication", "HadCardiacComplication", "HadAKIComplication"]
+#     complications2 = [f"{complication}2" for complication in complications]
+#     fig, ax = make_count_percent_plots(
+#         data=hld_df,
+#         x="HadCovidVaccine",
+#         hue=complications2,
+#         title=("Complications for " f"{topic}:\n{topic_features_map[topic]}"),
+#         xlabel="HadCovidVaccine",
+#         figsize=(10, 18),
+#     )
 # %%
 # Plot Only Pulmonary Complications
-for topic in topic_names:
-    hld_case_ids = W_df.loc[mask[topic]].index
-    hld_df = df.loc[hld_case_ids]
+# for topic in topic_names:
+#     hld_case_ids = W_df.loc[mask[topic]].index
+#     hld_df = df.loc[hld_case_ids]
 
-    fig, ax = make_count_percent_plots(
-        data=hld_df,
-        x="HadCovidVaccine",
-        hue="HadPulmonaryComplication2",
-        title=("Complications for " f"{topic}:\n{topic_features_map[topic]}"),
-        xlabel="HadCovidVaccine",
-        # figsize=(10, 18),
-    )
+#     fig, ax = make_count_percent_plots(
+#         data=hld_df,
+#         x="HadCovidVaccine",
+#         hue="HadPulmonaryComplication2",
+#         title=("Complications for " f"{topic}:\n{topic_features_map[topic]}"),
+#         xlabel="HadCovidVaccine",
+#         # figsize=(10, 18),
+#     )
 
 # %%
 # Significant Difference in incidence of pulmonary complication (vaccinated --> unvaccinated)
@@ -488,13 +487,98 @@ for topic in topic_names:
 # - Topic5 (GU Problem): 0.02->0.02
 # - Topic6 (Osteoarthritis): 0.02->0.02
 # - Topic7 (Vision Problem, Ear Problem): 0.02->0.02
+# %% [markdown]
+# ## For Each Topic Cluster of Patients Compute Odds Ratio of Having a Complication vs. Covid Vaccination Status
+#
+#
 # %%
-topic = "Topic3"
-topic_cluster_ids = W_df.loc[mask[topic]].index
-topic_all_else_ids = W_df.loc[~mask[topic]].index
+import statsmodels.api as sm
 
-topic_df = df.loc[topic_cluster_ids]
-non_topic_df = df.loc[topic_all_else_ids]
+
+def compute_odds_ratio_and_chisquared(
+    df: pd.DataFrame,
+    var1: str,
+    var2: str,
+    topics: list[str],
+    alpha: float = 0.05,
+    null_odds: float = 1.0,
+    var1_pos_name: str = "Yes",
+    var2_pos_name: str = "Yes",
+) -> pd.DataFrame:
+    _df = df.copy()
+    # Get only relevant columns
+    _df = _df.loc[:, [var1, var2, *topics]]
+
+    results = []
+    for topic in topics:
+        # Narrow data to only rows in the topic cluster
+        data = _df.loc[_df[topic]]
+        # Create Contingency Table object
+        table = sm.stats.Table.from_data(data)
+        # Wrap in a 2x2 Contingency Table object
+        t22 = sm.stats.Table2x2(table.table)
+        odds_ratio = t22.oddsratio
+        odds_ratio_lcb, odds_ratio_ucb = t22.oddsratio_confint(alpha=alpha)
+        odds_ratio_pvalue = t22.oddsratio_pvalue(null=null_odds)
+        # Chi-squared test of independence
+        chi_squared = t22.test_nominal_association()
+        # Support
+        num_cases = data.shape[0]
+        num_var1_pos = data.loc[:, var1].eq(var1_pos_name).sum()
+        num_var2_pos = data.loc[:, var2].eq(var2_pos_name).sum()
+
+        result = {
+            "NumCases": num_cases,
+            f"Num{var1}": num_var1_pos,
+            f"Num{var2}": num_var2_pos,
+            "OddsRatio": odds_ratio,
+            "OddsRatio_LCB": odds_ratio_lcb,
+            "OddsRatio_UCB": odds_ratio_ucb,
+            "OddsRatio_pvalue": odds_ratio_pvalue,
+            "ChiSquared_statistic": chi_squared.statistic,
+            "ChiSquared_df": chi_squared.df,
+            "ChiSquared_pvalue": chi_squared.pvalue,
+        }
+        results += [result]
+    return pd.DataFrame(results, index=topics)
+
+
+print("Odds Ratios of Having a Pulmonary Complication if has had at least 1 Covid Vaccine")
+topic_statistics = compute_odds_ratio_and_chisquared(
+    df=df.copy().join(mask),
+    var1="HadPulmonaryComplication2",
+    var2="HadCovidVaccine",
+    topics=mask.columns,
+)
+topic_features_map_df2.to_frame().join(topic_statistics)
+
 # %%
-
+print("Odds Ratios of Having a Cardiac Complication if has had at least 1 Covid Vaccine")
+topic_statistics = compute_odds_ratio_and_chisquared(
+    df=df.copy().join(mask),
+    var1="HadCardiacComplication2",
+    var2="HadCovidVaccine",
+    topics=mask.columns,
+)
+topic_features_map_df2.to_frame().join(topic_statistics)
+# %%
+print(
+    "Odds Ratios of Having a Myocardial Infarction Complication if has had at least 1 Covid Vaccine"
+)
+topic_statistics = compute_odds_ratio_and_chisquared(
+    df=df.copy().join(mask),
+    var1="HadMyocardialInfarctionComplication2",
+    var2="HadCovidVaccine",
+    topics=mask.columns,
+)
+topic_features_map_df2.to_frame().join(topic_statistics)
+# %%
+print("Odds Ratios of Having a AKI Complication if has had at least 1 Covid Vaccine")
+topic_statistics = compute_odds_ratio_and_chisquared(
+    df=df.copy().join(mask),
+    var1="HadAKIComplication2",
+    var2="HadCovidVaccine",
+    topics=mask.columns,
+)
+topic_features_map_df2.to_frame().join(topic_statistics)
 # %%
