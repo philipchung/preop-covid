@@ -408,6 +408,61 @@ pd.DataFrame.from_dict(data=topic_name2alias, orient="index", columns=["TopFeatu
 ).join(num_case).join(percent_case)
 
 # %% [markdown]
+# ## Determine Overlap Between Clusters
+#
+# Clusters generated using our thresholding procedure on topics are not mutually exclusive.
+# This is purposeful.
+#
+# Exclusive clusters would force each patient case into only a single
+# clinical phenotype. For example, if Hypertension and Asthma are two different
+# clnical phenotypes and a patient has both, a traditional clustering algorithm like
+# K-means would force assignment of that patient to either Hypertension cluster or
+# Asthma cluster, but not both.
+#
+# Our approach is more realistic in that a patient may belong to multiple clinical
+# phenotype clusters.  However, we should understand what degree of overlap exists.
+# If the overlaps are significant, we may need to use Post Hoc techniques to reduce
+# false discovery rate for multiple hypothesis testing as we are essentially testing
+# the same population on different hypothesis.
+#
+# Jaccard Index = Set Intersection / Set Union
+#
+# We compute jaccard index between every cluster to see how much overlap.
+# %%
+# Compute the amount of overlap between clusters using Jaccard Index
+topics = mask.columns
+num_topics = len(topics)
+topic_sets = {}
+for topic in topics:
+    topic_col = mask[topic]
+    # Get ProcIDs belonging to topic cluster
+    topic_ids = mask.index[topic_col].tolist()
+    topic_sets[topic] = topic_ids
+
+
+def jaccard(list1: list, list2: list) -> float:
+    intersection = len(list(set(list1).intersection(list2)))
+    union = (len(list1) + len(list2)) - intersection
+    return float(intersection) / union
+
+
+jaccard_indices = np.zeros(shape=(num_topics, num_topics))
+for i, topic_ids_group1 in enumerate(topic_sets.values()):
+    for j, topic_ids_group2 in enumerate(topic_sets.values()):
+        jaccard_indices[i, j] = jaccard(topic_ids_group1, topic_ids_group2)
+jaccard_indices = pd.DataFrame(data=jaccard_indices, index=topics, columns=topics)
+jaccard_indices
+# %%
+# Lets get the minimum and maximum Jaccard Similarity score between any 2 different groups
+temp = jaccard_indices.replace(1, np.NaN)
+print("Minimum Jaccard Similarity: ", temp.min().min())
+print("Maximum Jaccard Similarity: ", temp.max().max())
+# %%
+# How many examples are not in any of the topics?
+print("Number of examples belonging to no topics: ", (mask.any(axis=1) is False).sum())
+print("Number of examples belonging to at least 1 topic: ", mask.any(axis=1).sum())
+# %%
+# %% [markdown]
 # ## For Each Topic Cluster: Odds Ratio of Having a Complication vs. Covid Vaccination Status
 #
 # Each topic cluster is a subpopulation of patients based on a clinical phenotype (the Topic).
