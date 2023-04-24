@@ -679,18 +679,17 @@ p_vals_df = pd.concat(
 )
 # Benjamini/Hochberg procedure for p-value adjustment
 reject_null_list, p_vals_adj_list = [], []
-for col in p_vals_df:
-    complication_p_vals = p_vals_df.loc[:, col]
+for topic_p_vals in p_vals_df.itertuples(index=False):
     reject_null, p_vals_adj, _, _ = sm.stats.multipletests(
-        pvals=complication_p_vals.tolist(), alpha=0.05, method="fdr_bh"
+        pvals=topic_p_vals, alpha=0.05, method="fdr_bh"
     )
     reject_null_list += [reject_null]
     p_vals_adj_list += [p_vals_adj]
 p_vals_adj_df = pd.DataFrame(
-    np.stack(p_vals_adj_list).T, index=p_vals_df.index, columns=p_vals_df.columns
+    np.stack(p_vals_adj_list), index=p_vals_df.index, columns=p_vals_df.columns
 )
 reject_null_df = pd.DataFrame(
-    np.stack(reject_null_list).T, index=p_vals_df.index, columns=p_vals_df.columns
+    np.stack(reject_null_list), index=p_vals_df.index, columns=p_vals_df.columns
 )
 
 # Replace OddsRatio_pvalue & Significant columns with adjusted values
