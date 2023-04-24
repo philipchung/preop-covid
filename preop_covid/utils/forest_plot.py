@@ -252,8 +252,6 @@ def _make_forestplot(
     format_xticks(
         dataframe=dataframe, estimate=estimate, ll=ll, hl=hl, xticks=xticks, ax=ax, **kwargs
     )
-    # if "set_xlim" in kwargs:
-    #     ax.set_xlim(*set_xlim)
     draw_ref_xline(
         ax=ax,
         dataframe=dataframe,

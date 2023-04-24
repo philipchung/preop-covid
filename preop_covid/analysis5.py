@@ -310,6 +310,21 @@ W_df = pd.DataFrame(data=W, columns=topic_names, index=X_df.index)
 # Normalize the component matrix by each topic
 H_df_norm = H_df.apply(lambda row: row / row.sum(), axis=1)
 
+# Categorical Dtype for Topics
+topic_dtype = CategoricalDtype(
+    categories=H_df_norm.index.tolist(),
+    ordered=True,
+)
+# Categorical Dtype for Problems
+ros_problems_dtype = CategoricalDtype(
+    categories=H_df_norm.columns.tolist(),
+    ordered=False,
+)
+
+H_df_norm.index = pd.CategoricalIndex(data=H_df_norm.index, dtype=topic_dtype)
+H_df_norm.columns = pd.CategoricalIndex(data=H_df_norm.columns, dtype=ros_problems_dtype)
+# %%
+
 
 def get_topic_blend(row: pd.Series, top_n: int | None = 5, threshhold: float | None = 0.01) -> dict:
     """Determine blend of features in each topic by using ranking and weight thresholds.
@@ -358,7 +373,6 @@ topic_top5_features_str = topic_top5_features_lst.apply(lambda lst: " + ".join(l
 topic_top5_features_str2 = topic_top5_features_lst.apply(lambda lst: "\n".join(lst)).rename(
     "TopicBlend"
 )
-# %%
 # %%
 # Display Top 5 Features for each Topic
 topic_features_norm_df = pd.DataFrame.from_dict(
@@ -720,17 +734,30 @@ aki_topic_stats = topic_label.assign(Group="Acute Kidney Injury Complications").
     aki_topic_stats
 )
 # Combine all complications in single dataframe
-data = pd.concat([pulm_topic_stats, cardiac_topic_stats, aki_topic_stats], axis=0)
+data = pd.concat([pulm_topic_stats, cardiac_topic_stats, aki_topic_stats], axis=0).rename_axis(
+    index="TopicName"
+)
 data = data.astype({"NumCases": str, "NumComplications": str, "NumUnvaccinated": str})
 oddsratio_ci_str = data.apply(
     lambda row: f"{row.OddsRatio:.2f} ({row.OddsRatio_LCB:.2f} to {row.OddsRatio_UCB:.2f})", axis=1
 )
 data = data.assign(OddsRatio_CI=oddsratio_ci_str)
-data
+
+complication_group_dtype = CategoricalDtype(
+    categories=[
+        "Pulmonary Complications",
+        "Cardiac Complications",
+        "Acute Kidney Injury Complications",
+    ],
+    ordered=True,
+)
+
+data = data.astype({"Group": complication_group_dtype})
+data = data.reset_index().astype({"TopicName": topic_dtype, "Group": complication_group_dtype})
 # %%
 print("Odds Ratios of Having a Complication if has had at least 1 Covid Vaccine")
 # Display only Statistically Significant Topics
-data_significant = data.loc[data.Significant]
+data_significant = data.loc[data.Significant].sort_values(by=["TopicName", "Group"])
 data_significant
 # %%
 # Forest Plot of All Data
@@ -746,10 +773,12 @@ ax = forestplot(
     xticks=range(0, 5),
     xline=1,
     xlabel="Odds Ratio",
-    ylabel="Concidence Interval",
+    ylabel="Risk of Complications for Clinical Phenotypes",
+    annote=["NumCases", "NumComplications", "NumUnvaccinated", "OddsRatio_CI"],
+    annoteheaders=["N", "Complications", "Unvaccinated", "Odds Ratio (95% Conf. Int.)"],
     color_alt_rows=True,
     table=True,
-    figsize=(12, 24),
+    figsize=(8, 20),
     # # Additional kwargs for customizations
     **{
         "marker": "D",  # set maker symbol as diamond
@@ -761,8 +790,8 @@ ax = forestplot(
         "xupperlimit": 5,
     },
 )
-
 # %%
+
 # Forest Plot of Only Significant Data
 ax = forestplot(
     dataframe=data_significant,
@@ -776,10 +805,12 @@ ax = forestplot(
     xticks=range(0, 5),
     xline=1,
     xlabel="Odds Ratio",
-    ylabel="Concidence Interval",
+    ylabel="Risk of Complications for Clinical Phenotypes (Significant P-Values Only)",
+    annote=["NumCases", "NumComplications", "NumUnvaccinated", "OddsRatio_CI"],
+    annoteheaders=["N", "Complications", "Unvaccinated", "Odds Ratio (95% Conf. Int.)"],
     color_alt_rows=True,
     table=True,
-    figsize=(12, 24),
+    figsize=(8, 8),
     # # Additional kwargs for customizations
     **{
         "marker": "D",  # set maker symbol as diamond
