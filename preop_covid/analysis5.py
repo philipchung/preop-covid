@@ -773,7 +773,7 @@ ax = forestplot(
     xticks=range(0, 5),
     xline=1,
     xlabel="Odds Ratio",
-    ylabel="Risk of Complications for Clinical Phenotypes",
+    ylabel="Risk of Complications in COVID Unvaccinated Patients for Clinical Phenotypes ",
     annote=["NumCases", "NumComplications", "NumUnvaccinated", "OddsRatio_CI"],
     annoteheaders=["N", "Complications", "Unvaccinated", "Odds Ratio (95% Conf. Int.)"],
     color_alt_rows=True,
@@ -791,7 +791,6 @@ ax = forestplot(
     },
 )
 # %%
-
 # Forest Plot of Only Significant Data
 ax = forestplot(
     dataframe=data_significant,
@@ -805,7 +804,7 @@ ax = forestplot(
     xticks=range(0, 5),
     xline=1,
     xlabel="Odds Ratio",
-    ylabel="Risk of Complications for Clinical Phenotypes (Significant P-Values Only)",
+    ylabel="Risk of Complications in COVID Unvaccinated Patients for Clinical Phenotypes (Significant P-Values Only)",
     annote=["NumCases", "NumComplications", "NumUnvaccinated", "OddsRatio_CI"],
     annoteheaders=["N", "Complications", "Unvaccinated", "Odds Ratio (95% Conf. Int.)"],
     color_alt_rows=True,
