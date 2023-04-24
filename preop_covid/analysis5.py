@@ -1,7 +1,6 @@
 # %%
 from pathlib import Path
 
-import forestplot as fp
 import matplotlib.pyplot as plt
 import nimfa
 import numpy as np
@@ -14,6 +13,7 @@ from pandas.api.types import CategoricalDtype
 from preop_covid.case_data import CaseData
 from preop_covid.lab_data import LabData
 from preop_covid.preop_data import PreopSDE
+from preop_covid.utils import forestplot
 from preop_covid.vaccine_data import VaccineData
 
 # Display only 2 significant figures for decimals & p-value
@@ -337,7 +337,7 @@ def get_topic_blend(row: pd.Series, top_n: int | None = 5, threshhold: float | N
 
 # Topic Blends as Dicts
 topic_features = H_df_norm.apply(
-    lambda row: get_topic_blend(row, top_n=5, threshhold=0.03), axis=1
+    lambda row: get_topic_blend(row, top_n=5, threshhold=0.05), axis=1
 ).rename("TopicFeatures")
 topic_top5_features = H_df_norm.apply(
     lambda row: get_topic_blend(row, top_n=5, threshhold=None), axis=1
@@ -559,6 +559,7 @@ print("Maximum Jaccard Similarity: ", temp.max().max())
 # * Odds Ratio < 1: Unvaccinated group has fewer complications
 
 # %%
+# Compute Odds Ratios, p-values, confidence intervals
 
 
 def compute_odds_ratio_and_chisquared(
@@ -596,7 +597,7 @@ def compute_odds_ratio_and_chisquared(
             # Swap values since inverting flips LCB & UCB
             odds_ratio_lcb, odds_ratio_ucb = odds_ratio_ucb, odds_ratio_lcb
         # Chi-squared test of independence
-        chi_squared = t22.test_nominal_association()
+        # chi_squared = t22.test_nominal_association()
         # Support
         num_cases = data.shape[0]
         num_var1_pos = data.loc[:, var1].eq(var1_pos_name).sum()
@@ -611,9 +612,9 @@ def compute_odds_ratio_and_chisquared(
             "OddsRatio_UCB": odds_ratio_ucb,
             "OddsRatio_pvalue": odds_ratio_pvalue,
             "Significant": significant,
-            "ChiSquared_statistic": chi_squared.statistic,
-            "ChiSquared_df": chi_squared.df,
-            "ChiSquared_pvalue": chi_squared.pvalue,
+            # "ChiSquared_statistic": chi_squared.statistic,
+            # "ChiSquared_df": chi_squared.df,
+            # "ChiSquared_pvalue": chi_squared.pvalue,
         }
         results += [result]
     return pd.DataFrame(results, index=topics)
@@ -626,6 +627,13 @@ pulm_topic_stats = compute_odds_ratio_and_chisquared(
     topics=mask.columns,
     invert_odds_ratios=True,
 )
+num_unvaccinated = pulm_topic_stats.NumCases - pulm_topic_stats.NumHadCovidVaccine
+pulm_topic_stats = pulm_topic_stats.assign(NumHadCovidVaccine=num_unvaccinated).rename(
+    columns={
+        "NumHadPulmonaryComplication2": "NumComplications",
+        "NumHadCovidVaccine": "NumUnvaccinated",
+    }
+)
 
 cardiac_topic_stats = compute_odds_ratio_and_chisquared(
     df=df.copy().join(mask),
@@ -633,6 +641,13 @@ cardiac_topic_stats = compute_odds_ratio_and_chisquared(
     var2="HadCovidVaccine",
     topics=mask.columns,
     invert_odds_ratios=True,
+)
+num_unvaccinated = cardiac_topic_stats.NumCases - cardiac_topic_stats.NumHadCovidVaccine
+cardiac_topic_stats = cardiac_topic_stats.assign(NumHadCovidVaccine=num_unvaccinated).rename(
+    columns={
+        "NumHadCardiacComplication2": "NumComplications",
+        "NumHadCovidVaccine": "NumUnvaccinated",
+    }
 )
 
 mi_topic_stats = compute_odds_ratio_and_chisquared(
@@ -642,6 +657,13 @@ mi_topic_stats = compute_odds_ratio_and_chisquared(
     topics=mask.columns,
     invert_odds_ratios=True,
 )
+num_unvaccinated = mi_topic_stats.NumCases - mi_topic_stats.NumHadCovidVaccine
+mi_topic_stats = mi_topic_stats.assign(NumHadCovidVaccine=num_unvaccinated).rename(
+    columns={
+        "NumHadMyocardialInfarctionComplication2": "NumComplications",
+        "NumHadCovidVaccine": "NumUnvaccinated",
+    }
+)
 
 aki_topic_stats = compute_odds_ratio_and_chisquared(
     df=df.copy().join(mask),
@@ -650,7 +672,14 @@ aki_topic_stats = compute_odds_ratio_and_chisquared(
     topics=mask.columns,
     invert_odds_ratios=True,
 )
-# %%
+num_unvaccinated = aki_topic_stats.NumCases - aki_topic_stats.NumHadCovidVaccine
+aki_topic_stats = aki_topic_stats.assign(NumHadCovidVaccine=num_unvaccinated).rename(
+    columns={
+        "NumHadAKIComplication2": "NumComplications",
+        "NumHadCovidVaccine": "NumUnvaccinated",
+    }
+)
+
 # For each topic, get p-values for each hypothesis test (each complication outcome)
 p_vals_df = pd.concat(
     [
@@ -679,7 +708,7 @@ p_vals_adj_df = pd.DataFrame(
 reject_null_df = pd.DataFrame(
     np.stack(reject_null_list).T, index=p_vals_df.index, columns=p_vals_df.columns
 )
-# %%
+
 # Replace OddsRatio_pvalue & Significant columns with adjusted values
 pulm_topic_stats = pulm_topic_stats.assign(
     OddsRatio_pvalue=p_vals_adj_df["Pulmonary"], Significant=reject_null_df["Pulmonary"]
@@ -694,52 +723,88 @@ aki_topic_stats = aki_topic_stats.assign(
     OddsRatio_pvalue=p_vals_adj_df["AKI"], Significant=reject_null_df["AKI"]
 )
 
-# %%
-print("Odds Ratios of Having a Pulmonary Complication if has had at least 1 Covid Vaccine")
-pulm_topic_stats = topic_features_str.to_frame().join(pulm_topic_stats)
-# Display only Statistically Significant Topics
-pulm_topic_stats.loc[pulm_topic_stats.Significant]
-
-# %%
-print("Odds Ratios of Having a Cardiac Complication if has had at least 1 Covid Vaccine")
-cardiac_topic_stats = topic_features_str.to_frame().join(cardiac_topic_stats)
-# Display only Statistically Significant Topics
-cardiac_topic_stats.loc[cardiac_topic_stats.Significant]
-# %%
-print(
-    "Odds Ratios of Having a Myocardial Infarction Complication if has had at least 1 Covid Vaccine"
+# Define Topic Labels (Topic Feature Blends)
+topic_label = topic_features_str.to_frame().assign(
+    Phenotype=[f"Phenotype {x}" for x in range(len(topic_features_str))]
 )
-mi_topic_stats = topic_features_str.to_frame().join(mi_topic_stats)
-# Display only Statistically Significant Topics
-mi_topic_stats.loc[mi_topic_stats.Significant]
-# %%
-print("Odds Ratios of Having a AKI Complication if has had at least 1 Covid Vaccine")
-aki_topic_stats = topic_features_str.to_frame().join(aki_topic_stats)
-# Display only Statistically Significant Topics
-aki_topic_stats.loc[aki_topic_stats.Significant]
-# %%
-data = cardiac_topic_stats.rename_axis(index="TopicName").reset_index()
+topic_label = (
+    topic_label.apply(lambda row: f"{row.Phenotype}: {row.TopicBlend}", axis=1)
+    .rename("TopicBlend")
+    .to_frame()
+)
 
-fp.forestplot(
+# Add Topic Labels & Complication Group Membership
+pulm_topic_stats = topic_label.assign(Group="Pulmonary Complications").join(pulm_topic_stats)
+cardiac_topic_stats = topic_label.assign(Group="Cardiac Complications").join(cardiac_topic_stats)
+mi_topic_stats = topic_label.assign(Group="Myocardia Infarction Complications").join(mi_topic_stats)
+aki_topic_stats = topic_label.assign(Group="Acute Kidney Injury Complications").join(
+    aki_topic_stats
+)
+# Combine all complications in single dataframe
+data = pd.concat([pulm_topic_stats, cardiac_topic_stats, mi_topic_stats, aki_topic_stats], axis=0)
+data
+# %%
+print("Odds Ratios of Having a Complication if has had at least 1 Covid Vaccine")
+# Display only Statistically Significant Topics
+data_significant = data.loc[data.Significant]
+data_significant
+# %%
+# Forest Plot of All Data
+ax = forestplot(
     dataframe=data,
     estimate="OddsRatio",
     ll="OddsRatio_LCB",
     hl="OddsRatio_UCB",
     pval="OddsRatio_pvalue",
-    varlabel="TopicBlend",
-    xticks=[-2.0, -1.0, 0, 1.0, 2.0, 3.0],
+    starpval=True,
+    varlabel="Group",
+    groupvar="TopicBlend",
+    xticks=range(0, 5),
+    xline=1,
     xlabel="Odds Ratio",
     ylabel="Concidence Interval",
     color_alt_rows=True,
     table=True,
+    figsize=(12, 24),
     # # Additional kwargs for customizations
-    # **{
-    #     "marker": "D",  # set maker symbol as diamond
-    #     "markersize": 35,  # adjust marker size
-    #     "xlinestyle": (0, (10, 5)),  # long dash for x-reference line
-    #     "xlinecolor": "#808080",  # gray color for x-reference line
-    #     "xtick_size": 12,  # adjust x-ticker fontsize
-    # },
+    **{
+        "marker": "D",  # set maker symbol as diamond
+        "markersize": 35,  # adjust marker size
+        "xlinestyle": (0, (10, 5)),  # long dash for x-reference line
+        "xlinecolor": "#808080",  # gray color for x-reference line
+        "xtick_size": 12,  # adjust x-ticker fontsize
+        "xlowerlimit": 0,
+        "xupperlimit": 5,
+    },
 )
 
+# %%
+# Forest Plot of Only Significant Data
+ax = forestplot(
+    dataframe=data_significant,
+    estimate="OddsRatio",
+    ll="OddsRatio_LCB",
+    hl="OddsRatio_UCB",
+    pval="OddsRatio_pvalue",
+    starpval=True,
+    varlabel="Group",
+    groupvar="TopicBlend",
+    xticks=range(0, 5),
+    xline=1,
+    xlabel="Odds Ratio",
+    ylabel="Concidence Interval",
+    color_alt_rows=True,
+    table=True,
+    figsize=(12, 24),
+    # # Additional kwargs for customizations
+    **{
+        "marker": "D",  # set maker symbol as diamond
+        "markersize": 35,  # adjust marker size
+        "xlinestyle": (0, (10, 5)),  # long dash for x-reference line
+        "xlinecolor": "#808080",  # gray color for x-reference line
+        "xtick_size": 12,  # adjust x-ticker fontsize
+        "xlowerlimit": 0,
+        "xupperlimit": 5,
+    },
+)
 # %%
