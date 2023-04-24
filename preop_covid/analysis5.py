@@ -1,6 +1,7 @@
 # %%
 from pathlib import Path
 
+import forestplot as fp
 import matplotlib.pyplot as plt
 import nimfa
 import numpy as np
@@ -154,6 +155,36 @@ ros_organ_systems_cols = cases_organ_systems.columns.tolist()
 # Case Data (Elixhauser Comorbidiites, Complications, PCR Data)
 case_cols = cases_df.columns.tolist()
 
+
+# Format Capitalization
+def format_capitalization(text: str) -> str:
+    if text in (
+        "CAD",
+        "CHF",
+        "COPD",
+        "CVA",
+        "DVT",
+        "GERD",
+        "HIV/AIDS",
+        "PONV",
+        "PUD",
+        "PVD",
+        "TIA",
+        "URI",
+    ):
+        # Return Capitalized Abbreviation Unchanged
+        return text
+    elif text == "PAST MI":
+        return "Past MI"
+    elif text == "PRIOR IUFD":
+        return "Prior IUFD"
+    else:
+        # Capitalize Each Word
+        return " ".join(x.capitalize() for x in text.split(" "))
+
+
+ros_problem_cols2 = [format_capitalization(x) for x in ros_problem_cols]
+ros_organ_systems_cols2 = [format_capitalization(x) for x in ros_organ_systems_cols]
 # %% [markdown]
 # ## Dimensionality Reduction & Clustering of ROS Problems
 #
@@ -247,7 +278,7 @@ p1.set(
 # topics will still work, but may result in less table topic clusters.
 # %%
 # Compute NMF for 20 Topics
-X_df = df.loc[:, ros_problem_cols]
+X_df = df.loc[:, ros_problem_cols].rename(columns=dict(zip(ros_problem_cols, ros_problem_cols2)))
 X = X_df.to_numpy()
 nmf = nimfa.Nmf(
     V=X,
@@ -274,29 +305,72 @@ H_df = pd.DataFrame(
 # Put Transformed Data Matrix W into a Dataframe
 W_df = pd.DataFrame(data=W, columns=topic_names, index=X_df.index)
 
+# %%
 # Get Top 5 features for each topic & the percent each feature contributes to the topic
 # Normalize the component matrix by each topic
 H_df_norm = H_df.apply(lambda row: row / row.sum(), axis=1)
-# Get top 5 and their percentage weights
-topic_features_norm = H_df_norm.apply(
-    lambda row: [f"{k} ({v:.2%})" for k, v in row.nlargest(5).items()], axis=1
+
+
+def get_topic_blend(row: pd.Series, top_n: int | None = 5, threshhold: float | None = 0.01) -> dict:
+    """Determine blend of features in each topic by using ranking and weight thresholds.
+
+    Args:
+        row (pd.Series): row of features which represents the topic.
+        top_n (int, optional): how many of the top weighted features to consider.  If None,
+            will consider all features.
+        threshhold (float, optional): only consider features that are higher than
+            the fractional threshold.
+
+    Returns:
+        dict: Dict with keys of features that contribute to topic and values of weight for
+            each feature.
+    """
+    if top_n is None:
+        top_features_dict = row.sort_values(ascending=False)
+    else:
+        top_features_dict = row.nlargest(top_n)
+    if threshhold is None:
+        return top_features_dict.to_dict()
+    else:
+        return {k: v for k, v in top_features_dict.to_dict().items() if v >= threshhold}
+
+
+# Topic Blends as Dicts
+topic_features = H_df_norm.apply(
+    lambda row: get_topic_blend(row, top_n=5, threshhold=0.03), axis=1
+).rename("TopicFeatures")
+topic_top5_features = H_df_norm.apply(
+    lambda row: get_topic_blend(row, top_n=5, threshhold=None), axis=1
+).rename("TopicFeatures")
+# Format Topic Blends as List of Str ["Topic (%)", ...]
+topic_features_lst = topic_features.apply(
+    lambda d: [f"{k} ({v:.0%})" for k, v in d.items()]
+).rename("TopicBlendList")
+topic_top5_features_lst = topic_top5_features.apply(
+    lambda d: [f"{k} ({v:.0%})" for k, v in d.items()]
+).rename("TopicBlendList")
+# Format Topic Blends as Single Str Label
+topic_features_str = topic_features_lst.apply(lambda lst: " + ".join(lst)).rename("TopicBlend")
+topic_features_str2 = topic_features_lst.apply(lambda lst: "\n".join(lst)).rename("TopicBlend")
+topic_top5_features_str = topic_top5_features_lst.apply(lambda lst: " + ".join(lst)).rename(
+    "TopicBlend"
 )
-# Format as a dataframe
+topic_top5_features_str2 = topic_top5_features_lst.apply(lambda lst: "\n".join(lst)).rename(
+    "TopicBlend"
+)
+# %%
+# %%
+# Display Top 5 Features for each Topic
 topic_features_norm_df = pd.DataFrame.from_dict(
-    data=topic_features_norm.to_dict(),
+    data=topic_top5_features_lst.to_dict(),
     orient="index",
     columns=[f"TopFeature{k+1}" for k in range(5)],
 )
 topic_features_norm_df
 # %%
-# Create mapping between topic name and a topic "alias"/identity
-topic_features_map_df = topic_features_norm_df.apply(lambda row: "\n".join(row), axis=1).rename(
-    "TopicBlend"
-)
-topic_features_map_df2 = topic_features_norm_df.apply(lambda row: ", ".join(row), axis=1).rename(
-    "TopicBlend"
-)
-topic_features_map = topic_features_map_df.to_dict()
+# Display Topic Blends (Top 5 Features & Threshold > 3% Weight for Feature)
+topic_features_str.to_dict()
+# %%
 topic_name2alias = H_df_norm.apply(
     lambda row: [f"{k}" for k in row.nlargest(1).keys()][0], axis=1
 ).to_dict()
@@ -335,7 +409,7 @@ umap_data_long = pd.melt(
     value_name="Value",
 )
 umap_data_long = umap_data_long.merge(
-    topic_features_map_df, how="left", left_on="Topic", right_index=True
+    topic_features_str, how="left", left_on="Topic", right_index=True
 )
 umap_data_long["Title"] = umap_data_long.apply(
     lambda row: f"{row.Topic}:\n{row.TopicBlend}", axis=1
@@ -404,7 +478,7 @@ mask = W_df_norm.applymap(lambda x: x > threshold)
 num_case = mask.sum().rename("NumCases")
 percent_case = (mask.sum() / mask.shape[0]).rename("FractionOfCases")
 pd.DataFrame.from_dict(data=topic_name2alias, orient="index", columns=["TopFeature"]).join(
-    topic_features_map_df2
+    topic_features_str
 ).join(num_case).join(percent_case)
 # %%
 # How many examples are not in any of the topics?
@@ -622,25 +696,50 @@ aki_topic_stats = aki_topic_stats.assign(
 
 # %%
 print("Odds Ratios of Having a Pulmonary Complication if has had at least 1 Covid Vaccine")
-pulm_topic_stats = topic_features_map_df2.to_frame().join(pulm_topic_stats)
+pulm_topic_stats = topic_features_str.to_frame().join(pulm_topic_stats)
 # Display only Statistically Significant Topics
 pulm_topic_stats.loc[pulm_topic_stats.Significant]
 
 # %%
 print("Odds Ratios of Having a Cardiac Complication if has had at least 1 Covid Vaccine")
-cardiac_topic_stats = topic_features_map_df2.to_frame().join(cardiac_topic_stats)
+cardiac_topic_stats = topic_features_str.to_frame().join(cardiac_topic_stats)
 # Display only Statistically Significant Topics
 cardiac_topic_stats.loc[cardiac_topic_stats.Significant]
 # %%
 print(
     "Odds Ratios of Having a Myocardial Infarction Complication if has had at least 1 Covid Vaccine"
 )
-mi_topic_stats = topic_features_map_df2.to_frame().join(mi_topic_stats)
+mi_topic_stats = topic_features_str.to_frame().join(mi_topic_stats)
 # Display only Statistically Significant Topics
 mi_topic_stats.loc[mi_topic_stats.Significant]
 # %%
 print("Odds Ratios of Having a AKI Complication if has had at least 1 Covid Vaccine")
-aki_topic_stats = topic_features_map_df2.to_frame().join(aki_topic_stats)
+aki_topic_stats = topic_features_str.to_frame().join(aki_topic_stats)
 # Display only Statistically Significant Topics
 aki_topic_stats.loc[aki_topic_stats.Significant]
+# %%
+data = cardiac_topic_stats.rename_axis(index="TopicName").reset_index()
+
+fp.forestplot(
+    dataframe=data,
+    estimate="OddsRatio",
+    ll="OddsRatio_LCB",
+    hl="OddsRatio_UCB",
+    pval="OddsRatio_pvalue",
+    varlabel="TopicBlend",
+    xticks=[-2.0, -1.0, 0, 1.0, 2.0, 3.0],
+    xlabel="Odds Ratio",
+    ylabel="Concidence Interval",
+    color_alt_rows=True,
+    table=True,
+    # # Additional kwargs for customizations
+    # **{
+    #     "marker": "D",  # set maker symbol as diamond
+    #     "markersize": 35,  # adjust marker size
+    #     "xlinestyle": (0, (10, 5)),  # long dash for x-reference line
+    #     "xlinecolor": "#808080",  # gray color for x-reference line
+    #     "xtick_size": 12,  # adjust x-ticker fontsize
+    # },
+)
+
 # %%
