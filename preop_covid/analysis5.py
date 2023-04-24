@@ -650,21 +650,6 @@ cardiac_topic_stats = cardiac_topic_stats.assign(NumHadCovidVaccine=num_unvaccin
     }
 )
 
-mi_topic_stats = compute_odds_ratio_and_chisquared(
-    df=df.copy().join(mask),
-    var1="HadMyocardialInfarctionComplication2",
-    var2="HadCovidVaccine",
-    topics=mask.columns,
-    invert_odds_ratios=True,
-)
-num_unvaccinated = mi_topic_stats.NumCases - mi_topic_stats.NumHadCovidVaccine
-mi_topic_stats = mi_topic_stats.assign(NumHadCovidVaccine=num_unvaccinated).rename(
-    columns={
-        "NumHadMyocardialInfarctionComplication2": "NumComplications",
-        "NumHadCovidVaccine": "NumUnvaccinated",
-    }
-)
-
 aki_topic_stats = compute_odds_ratio_and_chisquared(
     df=df.copy().join(mask),
     var1="HadAKIComplication2",
@@ -687,7 +672,6 @@ p_vals_df = pd.concat(
         for k, df in {
             "Pulmonary": pulm_topic_stats,
             "Cardiac": cardiac_topic_stats,
-            "MI": mi_topic_stats,
             "AKI": aki_topic_stats,
         }.items()
     ],
@@ -716,9 +700,6 @@ pulm_topic_stats = pulm_topic_stats.assign(
 cardiac_topic_stats = cardiac_topic_stats.assign(
     OddsRatio_pvalue=p_vals_adj_df["Cardiac"], Significant=reject_null_df["Cardiac"]
 )
-mi_topic_stats = mi_topic_stats.assign(
-    OddsRatio_pvalue=p_vals_adj_df["MI"], Significant=reject_null_df["MI"]
-)
 aki_topic_stats = aki_topic_stats.assign(
     OddsRatio_pvalue=p_vals_adj_df["AKI"], Significant=reject_null_df["AKI"]
 )
@@ -736,12 +717,16 @@ topic_label = (
 # Add Topic Labels & Complication Group Membership
 pulm_topic_stats = topic_label.assign(Group="Pulmonary Complications").join(pulm_topic_stats)
 cardiac_topic_stats = topic_label.assign(Group="Cardiac Complications").join(cardiac_topic_stats)
-mi_topic_stats = topic_label.assign(Group="Myocardia Infarction Complications").join(mi_topic_stats)
 aki_topic_stats = topic_label.assign(Group="Acute Kidney Injury Complications").join(
     aki_topic_stats
 )
 # Combine all complications in single dataframe
-data = pd.concat([pulm_topic_stats, cardiac_topic_stats, mi_topic_stats, aki_topic_stats], axis=0)
+data = pd.concat([pulm_topic_stats, cardiac_topic_stats, aki_topic_stats], axis=0)
+data = data.astype({"NumCases": str, "NumComplications": str, "NumUnvaccinated": str})
+oddsratio_ci_str = data.apply(
+    lambda row: f"{row.OddsRatio:.2f} ({row.OddsRatio_LCB:.2f} to {row.OddsRatio_UCB:.2f})", axis=1
+)
+data = data.assign(OddsRatio_CI=oddsratio_ci_str)
 data
 # %%
 print("Odds Ratios of Having a Complication if has had at least 1 Covid Vaccine")
