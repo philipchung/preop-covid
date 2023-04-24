@@ -406,6 +406,10 @@ percent_case = (mask.sum() / mask.shape[0]).rename("FractionOfCases")
 pd.DataFrame.from_dict(data=topic_name2alias, orient="index", columns=["TopFeature"]).join(
     topic_features_map_df2
 ).join(num_case).join(percent_case)
+# %%
+# How many examples are not in any of the topics?
+print("Number of examples belonging to no topics: ", mask.any(axis=1).eq(False).astype(int).sum())
+print("Number of examples belonging to at least 1 topic: ", mask.any(axis=1).sum())
 
 # %% [markdown]
 # ## Determine Overlap Between Clusters
@@ -450,18 +454,14 @@ jaccard_indices = np.zeros(shape=(num_topics, num_topics))
 for i, topic_ids_group1 in enumerate(topic_sets.values()):
     for j, topic_ids_group2 in enumerate(topic_sets.values()):
         jaccard_indices[i, j] = jaccard(topic_ids_group1, topic_ids_group2)
-jaccard_indices = pd.DataFrame(data=jaccard_indices, index=topics, columns=topics)
-jaccard_indices
+jaccard_indices_df = pd.DataFrame(data=jaccard_indices, index=topics, columns=topics)
+jaccard_indices_df
 # %%
 # Lets get the minimum and maximum Jaccard Similarity score between any 2 different groups
-temp = jaccard_indices.replace(1, np.NaN)
+temp = jaccard_indices_df.replace(1, np.NaN)
 print("Minimum Jaccard Similarity: ", temp.min().min())
 print("Maximum Jaccard Similarity: ", temp.max().max())
-# %%
-# How many examples are not in any of the topics?
-print("Number of examples belonging to no topics: ", (mask.any(axis=1) is False).sum())
-print("Number of examples belonging to at least 1 topic: ", mask.any(axis=1).sum())
-# %%
+
 # %% [markdown]
 # ## For Each Topic Cluster: Odds Ratio of Having a Complication vs. Covid Vaccination Status
 #
@@ -545,54 +545,102 @@ def compute_odds_ratio_and_chisquared(
     return pd.DataFrame(results, index=topics)
 
 
-print("Odds Ratios of Having a Pulmonary Complication if has had at least 1 Covid Vaccine")
-topic_statistics = compute_odds_ratio_and_chisquared(
+pulm_topic_stats = compute_odds_ratio_and_chisquared(
     df=df.copy().join(mask),
     var1="HadPulmonaryComplication2",
     var2="HadCovidVaccine",
     topics=mask.columns,
     invert_odds_ratios=True,
 )
-topic_statistics = topic_features_map_df2.to_frame().join(topic_statistics)
-# Display only Statistically Significant Topics
-topic_statistics.loc[topic_statistics.Significant]
 
-# %%
-print("Odds Ratios of Having a Cardiac Complication if has had at least 1 Covid Vaccine")
-topic_statistics = compute_odds_ratio_and_chisquared(
+cardiac_topic_stats = compute_odds_ratio_and_chisquared(
     df=df.copy().join(mask),
     var1="HadCardiacComplication2",
     var2="HadCovidVaccine",
     topics=mask.columns,
     invert_odds_ratios=True,
 )
-topic_statistics = topic_features_map_df2.to_frame().join(topic_statistics)
-# Display only Statistically Significant Topics
-topic_statistics.loc[topic_statistics.Significant]
-# %%
-print(
-    "Odds Ratios of Having a Myocardial Infarction Complication if has had at least 1 Covid Vaccine"
-)
-topic_statistics = compute_odds_ratio_and_chisquared(
+
+mi_topic_stats = compute_odds_ratio_and_chisquared(
     df=df.copy().join(mask),
     var1="HadMyocardialInfarctionComplication2",
     var2="HadCovidVaccine",
     topics=mask.columns,
     invert_odds_ratios=True,
 )
-topic_statistics = topic_features_map_df2.to_frame().join(topic_statistics)
-# Display only Statistically Significant Topics
-topic_statistics.loc[topic_statistics.Significant]
-# %%
-print("Odds Ratios of Having a AKI Complication if has had at least 1 Covid Vaccine")
-topic_statistics = compute_odds_ratio_and_chisquared(
+
+aki_topic_stats = compute_odds_ratio_and_chisquared(
     df=df.copy().join(mask),
     var1="HadAKIComplication2",
     var2="HadCovidVaccine",
     topics=mask.columns,
     invert_odds_ratios=True,
 )
-topic_statistics = topic_features_map_df2.to_frame().join(topic_statistics)
+# %%
+# For each topic, get p-values for each hypothesis test (each complication outcome)
+p_vals_df = pd.concat(
+    [
+        df["OddsRatio_pvalue"].rename(k)
+        for k, df in {
+            "Pulmonary": pulm_topic_stats,
+            "Cardiac": cardiac_topic_stats,
+            "MI": mi_topic_stats,
+            "AKI": aki_topic_stats,
+        }.items()
+    ],
+    axis=1,
+)
+# Benjamini/Hochberg procedure for p-value adjustment
+reject_null_list, p_vals_adj_list = [], []
+for col in p_vals_df:
+    complication_p_vals = p_vals_df.loc[:, col]
+    reject_null, p_vals_adj, _, _ = sm.stats.multipletests(
+        pvals=complication_p_vals.tolist(), alpha=0.05, method="fdr_bh"
+    )
+    reject_null_list += [reject_null]
+    p_vals_adj_list += [p_vals_adj]
+p_vals_adj_df = pd.DataFrame(
+    np.stack(p_vals_adj_list).T, index=p_vals_df.index, columns=p_vals_df.columns
+)
+reject_null_df = pd.DataFrame(
+    np.stack(reject_null_list).T, index=p_vals_df.index, columns=p_vals_df.columns
+)
+# %%
+# Replace OddsRatio_pvalue & Significant columns with adjusted values
+pulm_topic_stats = pulm_topic_stats.assign(
+    OddsRatio_pvalue=p_vals_adj_df["Pulmonary"], Significant=reject_null_df["Pulmonary"]
+)
+cardiac_topic_stats = cardiac_topic_stats.assign(
+    OddsRatio_pvalue=p_vals_adj_df["Cardiac"], Significant=reject_null_df["Cardiac"]
+)
+mi_topic_stats = mi_topic_stats.assign(
+    OddsRatio_pvalue=p_vals_adj_df["MI"], Significant=reject_null_df["MI"]
+)
+aki_topic_stats = aki_topic_stats.assign(
+    OddsRatio_pvalue=p_vals_adj_df["AKI"], Significant=reject_null_df["AKI"]
+)
+
+# %%
+print("Odds Ratios of Having a Pulmonary Complication if has had at least 1 Covid Vaccine")
+pulm_topic_stats = topic_features_map_df2.to_frame().join(pulm_topic_stats)
 # Display only Statistically Significant Topics
-topic_statistics.loc[topic_statistics.Significant]
+pulm_topic_stats.loc[pulm_topic_stats.Significant]
+
+# %%
+print("Odds Ratios of Having a Cardiac Complication if has had at least 1 Covid Vaccine")
+cardiac_topic_stats = topic_features_map_df2.to_frame().join(cardiac_topic_stats)
+# Display only Statistically Significant Topics
+cardiac_topic_stats.loc[cardiac_topic_stats.Significant]
+# %%
+print(
+    "Odds Ratios of Having a Myocardial Infarction Complication if has had at least 1 Covid Vaccine"
+)
+mi_topic_stats = topic_features_map_df2.to_frame().join(mi_topic_stats)
+# Display only Statistically Significant Topics
+mi_topic_stats.loc[mi_topic_stats.Significant]
+# %%
+print("Odds Ratios of Having a AKI Complication if has had at least 1 Covid Vaccine")
+aki_topic_stats = topic_features_map_df2.to_frame().join(aki_topic_stats)
+# Display only Statistically Significant Topics
+aki_topic_stats.loc[aki_topic_stats.Significant]
 # %%
