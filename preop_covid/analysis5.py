@@ -9,6 +9,7 @@ import seaborn as sns
 import statsmodels.api as sm
 import umap
 from pandas.api.types import CategoricalDtype
+from utils import xie_beni_index
 
 from preop_covid.case_data import CaseData
 from preop_covid.lab_data import LabData
@@ -463,30 +464,66 @@ g.set_titles(col_template="{col_name}")
 #
 # We need to transform fuzzy/"soft" clusters to hard clusters that we can then use as a
 # cohort to look at complication rates.
-#
-# Each case is a blend of Topics--we can convert the contribution of Topics to a case
-# such that all the 20 topics all add up to 100%.
-# We empirically choose a threshold=**25%**.
-# **This means that a clinical phenotype is determined to be present for a patient if >25%
-# of the Cases' ROS is explained by that clinical phenotype.**  This threshold converts
-# the soft/fuzzy clusters into a discrete subpopulation of patients associated with the
-# clinical phenotype.  This threshold allows for multiple clinical phenotypes to be
+# * Each case is a blend of Topics--we can normalize the contribution of Topics to a case
+# such that all the 20 topics all add up to 100%.  Then we choose a threshold.
+# * **For example, if we choose a threshold=25%, This means that a clinical phenotype is
+# determined to be present for a patient case if >25% of the Cases' ROS is explained by
+# that clinical phenotype.**
+# * This threshold converts the soft/fuzzy clusters into a discrete subpopulation of patients
+# associated with the clinical phenotype.
+# * This threshold allows for multiple clinical phenotypes to be
 # present, but also requires a large portion of the patient’s ROS to be explained by
 # the phenotype.
+# * To validate that we have chosen an appropriate threshold, we can use the Xie-Beni
+# index for internal cluster validation.  This is an index that measures cluster compactness
+# and separation. Low values of Xie-Beni means that clusters are more compact and separate
+# from one another.
 #
-# Note that by this definition, it is possible for a Case to be in multiple Topic clusters.
-# It is possible for a Case to not be in any Topic clusters.  The goal is not to force
-# all the cases into the Topics, which is what many other clustering algorithms do,
-# but rather yield cases that are representative of the Topics within our dataset
-# that we can then use as a cohort for further analysis.
+# Note that it is possible for:
+# * a Case to be in multiple Topic clusters.
+# * a Case to not be in any Topic clusters.
+#
+# The goal is not to force all the cases into the Topics, which is what many other
+# clustering algorithms do, but rather yield cases that are representative of the Topics
+# within our dataset that we can then use as a cohort for further analysis.
 
 # %%
 # Normalize Transformed Data Matrix by Row
 # Interpretation: % of each Topic that makes up each case's ROS
 W_df_norm = W_df.apply(lambda row: row / row.sum(), axis=1)
-# Apply Threshold Cut-off to get a "soft" cluster
-# Note: clusters may overlap & a single case may belong to multiple clusters
-threshold = 0.25  # Cluster membership if >10% of Case's ROS is explained by topic
+
+# %%
+# Determine appropriate threshold using Xie-Beni Index
+
+thresholds = np.arange(start=0, stop=1.05, step=0.05)
+thresholds[0], thresholds[-1] = 0.01, 0.99
+xb_indices = []
+for threshold in thresholds:
+    # Apply threshold.  This yields a mask which is also the cluster assignments for each sample.
+    mask = W_df_norm.applymap(lambda x: x > threshold)
+    # Compute Xie-Beni Index
+    xb_index = xie_beni_index(X=X, labels=mask)
+    xb_indices += [xb_index]
+
+xb = pd.DataFrame(data=xb_indices, index=thresholds, columns=["XieBeni"]).rename_axis(
+    index="Threshholds"
+)
+
+fig, ax = plt.subplots(figsize=(8, 6))
+ax = sns.lineplot(data=xb.reset_index(), x="Threshholds", y="XieBeni", ax=ax)
+ax.set(
+    title="Xie-Beni Index across Multiple Thresholds",
+    ylabel="Xie-Beni Index",
+    xlabel="Threshold Percent of ROS Explained by Clinical Phenotype",
+)
+
+# NOTE: based on this analysis, we can see that there is an "elbow" at around 0.2.
+# Increasing the threshold much further than this would not yield significantly better
+# separated clusters.
+
+# %%
+# Apply Threshold Cut-off to get clusters that we will use for downstream analysis
+threshold = 0.25
 mask = W_df_norm.applymap(lambda x: x > threshold)
 # Percent of examples in each topic cluster (clusters may overlap)
 num_case = mask.sum().rename("NumCases")
