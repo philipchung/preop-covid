@@ -167,6 +167,7 @@ class CaseData:
                 "BMI": _df.BodyMassIndex_Value,
                 "Weight": _df.Weight_Value,
                 "Height": _df.Height_Value,
+                "AnesthesiaUnits": _df.PrimaryAnesthesiaCPT_MPOGbaseUnits,
                 "Mortality30Day": _df.HospitalMortality30Day_Value,
                 "MORT01": _df.MORT01_Result_Reason,
                 "PACU_Duration": pacu_duration,
