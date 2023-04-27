@@ -1,5 +1,6 @@
 # %%
 from pathlib import Path
+from typing import Any
 
 import nimfa
 import numpy as np
@@ -402,261 +403,199 @@ def get_largest_index_in_series(series: pd.Series) -> str:
     return max(d, key=d.get)
 
 
-majority_topic = W_df.apply(get_largest_index_in_series, axis=1)
-majority_topic
+majority_topic = W_df.apply(get_largest_index_in_series, axis=1).rename("MajorityTopic")
 # %%
-
-non_topic_variables = [""]
-
-non_topic_variables_df = X_df.loc[:, non_topic_variables]
-# %%
-X_topics_df = majority_topic.join(W_df).join(X_df.loc[:, non_topic_variables])
-X_topics_df
-# %%
-# TODO:
-# - get dominant phenotype for each case as label
-# - define data inputs/outputs for whole-population logistic regression
-# - create subpopulations for logistic regression
-
-
-# %%
-
-# %%
-# Normalize Transformed Data Matrix by Row
-# Interpretation: % of each Topic that makes up each case's ROS
-W_df_norm = W_df.apply(lambda row: row / row.sum(), axis=1)
-
-# %%
-
-# %% [markdown]
-# ## For Each Topic Cluster: Odds Ratio of Having a Complication vs. Covid Vaccination Status
-#
-# Each topic cluster is a subpopulation of patients based on a clinical phenotype (the Topic).
-# For each subpopulation, we can then conduct a retrospective case-control study.
-# * Case: Patients who have received at least 1 COVID vaccine
-# * Control: Patients who have not received COVID vaccine
-#
-# We then measure the odds of complication occuring.  The MPOG Database documents 4 types
-# of complications that we can look at.
-# * Pulmonary Complication: https://phenotypes.mpog.org/AHRQ%20Complication%20-%20Pulmonary%20-%20All
-# * Cardiac Complication: [not publically documented on MPOG website]
-# * Myocardial Infarction Complication: [not publically documented on MPOG website]
-# * AKI Complication: https://phenotypes.mpog.org/MPOG%20Complication%20-%20Acute%20Kidney%20Injury%20(AKI)
-#
-# Odds Ratio = odds of complication in vaccinated / odds of complication in unvaccinated
-#
-# Interpretation of Odds Ratio:
-# * Odds Ratio = 1: No difference between groups
-# * Odds Ratio > 1: Unvaccinated group has more complications
-# * Odds Ratio < 1: Unvaccinated group has fewer complications
-
-# %%
-# Compute Odds Ratios, p-values, confidence intervals
-
-
-def compute_odds_ratio_and_chisquared(
-    df: pd.DataFrame,
-    var1: str,
-    var2: str,
-    topics: list[str],
-    alpha: float = 0.05,
-    statistical_significance_threshold: float = 0.05,
-    null_odds: float = 1.0,
-    var1_pos_name: str = "Yes",
-    var2_pos_name: str = "Yes",
-    invert_odds_ratios: bool = False,
-) -> pd.DataFrame:
-    _df = df.copy()
-    # Get only relevant columns
-    _df = _df.loc[:, [var1, var2, *topics]]
-
-    results = []
-    for topic in topics:
-        # Narrow data to only rows in the topic cluster
-        data = _df.loc[_df[topic]]
-        # Create Contingency Table object
-        table = sm.stats.Table.from_data(data)
-        # Wrap in a 2x2 Contingency Table object
-        t22 = sm.stats.Table2x2(table.table)
-        odds_ratio = t22.oddsratio
-        odds_ratio_lcb, odds_ratio_ucb = t22.oddsratio_confint(alpha=alpha)
-        odds_ratio_pvalue = t22.oddsratio_pvalue(null=null_odds)
-        significant = odds_ratio_pvalue < statistical_significance_threshold
-        if invert_odds_ratios:
-            odds_ratio = 1 / odds_ratio
-            odds_ratio_lcb = 1 / odds_ratio_lcb
-            odds_ratio_ucb = 1 / odds_ratio_ucb
-            # Swap values since inverting flips LCB & UCB
-            odds_ratio_lcb, odds_ratio_ucb = odds_ratio_ucb, odds_ratio_lcb
-        # Chi-squared test of independence
-        # chi_squared = t22.test_nominal_association()
-        # Support
-        num_cases = data.shape[0]
-        num_var1_pos = data.loc[:, var1].eq(var1_pos_name).sum()
-        num_var2_pos = data.loc[:, var2].eq(var2_pos_name).sum()
-
-        result = {
-            "NumCases": num_cases,
-            f"Num{var1}": num_var1_pos,
-            f"Num{var2}": num_var2_pos,
-            "OddsRatio": odds_ratio,
-            "OddsRatio_LCB": odds_ratio_lcb,
-            "OddsRatio_UCB": odds_ratio_ucb,
-            "OddsRatio_pvalue": odds_ratio_pvalue,
-            "Significant": significant,
-            # "ChiSquared_statistic": chi_squared.statistic,
-            # "ChiSquared_df": chi_squared.df,
-            # "ChiSquared_pvalue": chi_squared.pvalue,
-        }
-        results += [result]
-    return pd.DataFrame(results, index=topics)
-
-
-pulm_topic_stats = compute_odds_ratio_and_chisquared(
-    df=df.copy().join(mask),
-    var1="HadPulmonaryComplication2",
-    var2="HadCovidVaccine",
-    topics=mask.columns,
-    invert_odds_ratios=True,
-)
-num_unvaccinated = pulm_topic_stats.NumCases - pulm_topic_stats.NumHadCovidVaccine
-pulm_topic_stats = pulm_topic_stats.assign(NumHadCovidVaccine=num_unvaccinated).rename(
-    columns={
-        "NumHadPulmonaryComplication2": "NumComplications",
-        "NumHadCovidVaccine": "NumUnvaccinated",
-    }
-)
-
-cardiac_topic_stats = compute_odds_ratio_and_chisquared(
-    df=df.copy().join(mask),
-    var1="HadCardiacComplication2",
-    var2="HadCovidVaccine",
-    topics=mask.columns,
-    invert_odds_ratios=True,
-)
-num_unvaccinated = cardiac_topic_stats.NumCases - cardiac_topic_stats.NumHadCovidVaccine
-cardiac_topic_stats = cardiac_topic_stats.assign(NumHadCovidVaccine=num_unvaccinated).rename(
-    columns={
-        "NumHadCardiacComplication2": "NumComplications",
-        "NumHadCovidVaccine": "NumUnvaccinated",
-    }
-)
-
-aki_topic_stats = compute_odds_ratio_and_chisquared(
-    df=df.copy().join(mask),
-    var1="HadAKIComplication2",
-    var2="HadCovidVaccine",
-    topics=mask.columns,
-    invert_odds_ratios=True,
-)
-num_unvaccinated = aki_topic_stats.NumCases - aki_topic_stats.NumHadCovidVaccine
-aki_topic_stats = aki_topic_stats.assign(NumHadCovidVaccine=num_unvaccinated).rename(
-    columns={
-        "NumHadAKIComplication2": "NumComplications",
-        "NumHadCovidVaccine": "NumUnvaccinated",
-    }
-)
-
-# For each topic, get p-values for each hypothesis test (each complication outcome)
-p_vals_df = pd.concat(
-    [
-        df["OddsRatio_pvalue"].rename(k)
-        for k, df in {
-            "Pulmonary": pulm_topic_stats,
-            "Cardiac": cardiac_topic_stats,
-            "AKI": aki_topic_stats,
-        }.items()
-    ],
-    axis=1,
-)
-# Benjamini/Hochberg procedure for p-value adjustment
-reject_null_list, p_vals_adj_list = [], []
-for topic_p_vals in p_vals_df.itertuples(index=False):
-    reject_null, p_vals_adj, _, _ = sm.stats.multipletests(
-        pvals=topic_p_vals, alpha=0.05, method="fdr_bh"
+# Define Non-Topic Columns for Modeling
+case_info_cols = [
+    "ASA",
+    "AnesUnits",
+    "Age",
+    "BMI",
+    "Race",
+    "Sex",
+    "AnesDuration",
+    "HadCovidVaccine",
+]
+case_info_df = df.loc[:, case_info_cols]
+# Convert ASA to Numeric
+asa_numeric = case_info_df.ASA.apply(lambda x: "".join(filter(str.isdigit, x))).astype(int)
+# Convert Race to Categorical, then generate 1-hot Matrix across Categories
+race_cat_dtype = CategoricalDtype(categories=case_info_df.Race.unique(), ordered=False)
+race_cat = case_info_df.Race.astype(race_cat_dtype)
+race_cat_dummy_df = pd.get_dummies(data=race_cat)
+# Convert Biological Sex to Binary
+sex_binary = (case_info_df.Sex == "Male").astype(int).rename("IsMaleSex")
+# Convert Anesthesia Duration to Hours
+anes_duration = case_info_df.AnesDuration.apply(lambda dt: dt.total_seconds() / (60 * 60))
+# Convert HadCovidVaccine to Binary
+had_covid_vaccine = (df.HadCovidVaccine == "Yes").astype(int)
+# Reformat Non-Topic Columns for Modeling
+case_info_df2 = (
+    case_info_df.assign(
+        ASA=asa_numeric,
+        AnesDuration=anes_duration,
+        IsMaleSex=sex_binary,
+        HadCovidVaccine=had_covid_vaccine,
     )
-    reject_null_list += [reject_null]
-    p_vals_adj_list += [p_vals_adj]
-p_vals_adj_df = pd.DataFrame(
-    np.stack(p_vals_adj_list), index=p_vals_df.index, columns=p_vals_df.columns
+    .drop(columns=["Race", "Sex"])
+    .join(race_cat_dummy_df)
 )
-reject_null_df = pd.DataFrame(
-    np.stack(reject_null_list), index=p_vals_df.index, columns=p_vals_df.columns
-)
+# %% [markdown]
+# ## Logistic Regression for Odds Ratios
+#
+# 1. Compute odds of complication vs. covid vaccination status overall
+# 2. For Each Clinical Phenotype: Odds Ratio of Having a Complication vs. Covid Vaccination Status
+#   - we assign each case to the most dominant clinical phenotype
+#   - there is no overlap of cases between these clinical phenotype subpopulations
+# %%
 
-# Replace OddsRatio_pvalue & Significant columns with adjusted values
-pulm_topic_stats = pulm_topic_stats.assign(
-    OddsRatio_pvalue=p_vals_adj_df["Pulmonary"], Significant=reject_null_df["Pulmonary"]
-)
-cardiac_topic_stats = cardiac_topic_stats.assign(
-    OddsRatio_pvalue=p_vals_adj_df["Cardiac"], Significant=reject_null_df["Cardiac"]
-)
-aki_topic_stats = aki_topic_stats.assign(
-    OddsRatio_pvalue=p_vals_adj_df["AKI"], Significant=reject_null_df["AKI"]
-)
 
-# Define Topic Labels (Topic Feature Blends)
+def compute_logistic_regression(
+    X: pd.DataFrame, y: pd.Series, alpha: float = 0.05, method: str = "bfgs", maxiter: int = 1000
+) -> dict[str, Any]:
+    model = sm.Logit(exog=X, endog=y, offset=None, missing="raise").fit(
+        method=method, maxiter=maxiter
+    )
+    odds_ratios = pd.DataFrame(
+        {
+            "OR": model.params,
+            "LowerCI": model.conf_int()[0],
+            "UpperCI": model.conf_int()[1],
+        }
+    )
+    odds_ratios = np.exp(odds_ratios)
+    pvalues = model.pvalues.rename("PValues")
+    significant = (pvalues <= alpha).rename("Significant")
+    output = odds_ratios.join(pvalues).join(significant)
+    # Support
+    num_cases = X.shape[0]
+    num_vaccinated = X.loc[:, "HadCovidVaccine"].sum()
+    num_complications = y.sum()
+    return {
+        "output": output,
+        "num_cases": num_cases,
+        "num_vaccinated": num_vaccinated,
+        "num_complications": num_complications,
+        "model": model,
+    }
+
+
+## Get Data of All Cases
+# Input Data Matrix for Modeling with Topics + Non-Topic Variables
+X_all_cases_df = W_df.join(case_info_df2)
+# Convert Presence of Pulmonary Complications to Binary
+y = df.HadPulmonaryComplication2.apply(lambda x: x == "Yes").astype(int)
+
+## Apply Logistic Regression to All Cases
+all_cases_results = compute_logistic_regression(X=X_all_cases_df, y=y)
+# Isolate Odds Ratios for Covid Vaccination
+all_cases_odds_ratios = all_cases_results["output"]
+all_cases_covid_vaccine_odds_ratio = all_cases_odds_ratios.loc["HadCovidVaccine"]
+# Add Number of Cases
+all_cases_covid_vaccine_odds_ratio = pd.Series(
+    {
+        "NumCases": all_cases_results["num_cases"],
+        "NumVaccinated": all_cases_results["num_vaccinated"],
+        "NumComplications": all_cases_results["num_complications"],
+        **all_cases_covid_vaccine_odds_ratio.to_dict(),
+    }
+)
+# %%
+## Apply Logistic Regression independently to in each Clinical Phenotype
+topic_results = []
+for topic in topic_names:
+    # Get Cases for each Clinical Phenotype
+    topic_case_ids = majority_topic.loc[majority_topic == topic].index.tolist()
+    # Drop Topic/Clinical Phenotype Input Variables since we are Subsetting on Them
+    X_topic_df = X_all_cases_df.loc[topic_case_ids].drop(columns=topic_names)
+    y_topic = y.loc[topic_case_ids]
+    # Apply Logistic Regression to only Caes in the Clinical Phenotype
+    topic_result = compute_logistic_regression(X=X_topic_df, y=y_topic)
+    topic_results += [{"topic": topic, **topic_result}]
+
+# All Odds ratios for each topic
+odds_ratios = {d["topic"]: d["output"] for d in topic_results}
+
+# Isolate Odds Ratios for Covid Vaccination
+topic_covid_vaccine_odds_ratios = {k: v.loc["HadCovidVaccine"] for k, v in odds_ratios.items()}
+# Make into DataFrame
+topic_covid_vaccine_odds_ratios = pd.DataFrame.from_dict(
+    topic_covid_vaccine_odds_ratios, orient="index"
+)
+# Num Cases for each topic
+num_cases = {
+    d["topic"]: {
+        "NumCases": d["num_cases"],
+        "NumVaccinated": d["num_vaccinated"],
+        "NumComplications": d["num_complications"],
+    }
+    for d in topic_results
+}
+num_cases = pd.DataFrame.from_dict(num_cases, orient="index")
+
+topic_covid_vaccine_odds_ratios = num_cases.join(topic_covid_vaccine_odds_ratios)
+# %%
+# Put all odds ratios in same table
+covid_vaccine_odds_ratio_df = pd.concat(
+    [
+        all_cases_covid_vaccine_odds_ratio.rename("All Cases").to_frame().T,
+        topic_covid_vaccine_odds_ratios,
+    ],
+    axis=0,
+).rename_axis(index="Population")
+
+# Topic Labels (Topic Feature Blends) for each Subpopulation
 topic_label = topic_features_str.to_frame().assign(
     Phenotype=[f"Phenotype {x}" for x in range(len(topic_features_str))]
 )
-topic_label = (
-    topic_label.apply(lambda row: f"{row.Phenotype}: {row.TopicBlend}", axis=1)
-    .rename("TopicBlend")
-    .to_frame()
+topic_label = topic_label.apply(lambda row: f"{row.Phenotype}: {row.TopicBlend}", axis=1)
+# Add "All Cases"
+population_label = (
+    pd.Series({"All Cases": "All Cases", **topic_label.to_dict()}).rename("Population").to_frame()
 )
 
-# Add Topic Labels & Complication Group Membership
-pulm_topic_stats = topic_label.assign(Group="Pulmonary Complications").join(pulm_topic_stats)
-cardiac_topic_stats = topic_label.assign(Group="Cardiac Complications").join(cardiac_topic_stats)
-aki_topic_stats = topic_label.assign(Group="Acute Kidney Injury Complications").join(
-    aki_topic_stats
-)
-# Combine all complications in single dataframe
-data = pd.concat([pulm_topic_stats, cardiac_topic_stats, aki_topic_stats], axis=0).rename_axis(
-    index="TopicName"
-)
-data = data.astype({"NumCases": str, "NumComplications": str, "NumUnvaccinated": str})
+# Single DataFrame with All Populations being considered
+data = population_label.join(covid_vaccine_odds_ratio_df)
+# Convert Confidence Interval to a String
 oddsratio_ci_str = data.apply(
-    lambda row: f"{row.OddsRatio:.2f} ({row.OddsRatio_LCB:.2f} to {row.OddsRatio_UCB:.2f})", axis=1
+    lambda row: f"{row.OR:.2f} ({row.LowerCI:.2f} to {row.UpperCI:.2f})", axis=1
 )
-data = data.assign(OddsRatio_CI=oddsratio_ci_str)
-
-complication_group_dtype = CategoricalDtype(
-    categories=[
-        "Pulmonary Complications",
-        "Cardiac Complications",
-        "Acute Kidney Injury Complications",
-    ],
-    ordered=True,
+data = data.assign(
+    OR_CI=oddsratio_ci_str,
+    # Compute Inverse Odds Ratios (Risk of Harm for Unvaccinated)
+    NumUnvaccinated=data.NumCases - data.NumVaccinated,
+    OR_Inverse=1 / data.OR,
+    LowerCI_Inverse=1 / data.UpperCI,
+    UpperCI_Inverse=1 / data.LowerCI,
 )
-
-data = data.astype({"Group": complication_group_dtype})
-data = data.reset_index().astype({"TopicName": topic_dtype, "Group": complication_group_dtype})
+# Convert Inverse Odds Ratio Confidence Interval to a String
+inv_oddsratio_ci_str = data.apply(
+    lambda row: f"{row.OR_Inverse:.2f} ({row.LowerCI_Inverse:.2f} to {row.UpperCI_Inverse:.2f})",
+    axis=1,
+)
+data = data.assign(OR_Inverse_CI=inv_oddsratio_ci_str)
+data
 # %%
-print("Odds Ratios of Having a Complication if has had at least 1 Covid Vaccine")
-# Display only Statistically Significant Topics
-data_significant = data.loc[data.Significant].sort_values(by=["TopicName", "Group"])
-data_significant
+
 # %%
 # Forest Plot of All Data
 ax = forestplot(
     dataframe=data,
-    estimate="OddsRatio",
-    ll="OddsRatio_LCB",
-    hl="OddsRatio_UCB",
-    pval="OddsRatio_pvalue",
+    estimate="OR_Inverse",
+    ll="LowerCI_Inverse",
+    hl="UpperCI_Inverse",
+    pval="PValues",
     starpval=True,
-    varlabel="Group",
-    groupvar="TopicBlend",
+    varlabel="Population",
     xticks=range(0, 5),
     xline=1,
     xlabel="Odds Ratio",
-    ylabel="Risk of Complications in COVID Unvaccinated Patients for Clinical Phenotypes ",
-    annote=["NumCases", "NumComplications", "NumUnvaccinated", "OddsRatio_CI"],
+    ylabel="Risk of Complications in COVID Unvaccinated Patients",
+    annote=["NumCases", "NumComplications", "NumUnvaccinated", "OR_Inverse_CI"],
     annoteheaders=["N", "Complications", "Unvaccinated", "Odds Ratio (95% Conf. Int.)"],
     color_alt_rows=True,
     table=True,
-    figsize=(8, 20),
+    figsize=(6, 10),
     # # Additional kwargs for customizations
     **{
         "marker": "D",  # set maker symbol as diamond
@@ -668,26 +607,32 @@ ax = forestplot(
         "xupperlimit": 5,
     },
 )
+
+# %%
+print("Odds Ratios of Having a Complication if has had at least 1 Covid Vaccine")
+# Display only Statistically Significant Topics
+data_significant = data.loc[data.Significant]
+data_significant
+
 # %%
 # Forest Plot of Only Significant Data
 ax = forestplot(
     dataframe=data_significant,
-    estimate="OddsRatio",
-    ll="OddsRatio_LCB",
-    hl="OddsRatio_UCB",
-    pval="OddsRatio_pvalue",
+    estimate="OR_Inverse",
+    ll="LowerCI_Inverse",
+    hl="UpperCI_Inverse",
+    pval="PValues",
     starpval=True,
-    varlabel="Group",
-    groupvar="TopicBlend",
+    varlabel="Population",
     xticks=range(0, 5),
     xline=1,
     xlabel="Odds Ratio",
-    ylabel="Risk of Complications in COVID Unvaccinated Patients for Clinical Phenotypes (Significant P-Values Only)",
-    annote=["NumCases", "NumComplications", "NumUnvaccinated", "OddsRatio_CI"],
+    ylabel="Risk of Complications in COVID Unvaccinated Patients",
+    annote=["NumCases", "NumComplications", "NumUnvaccinated", "OR_Inverse_CI"],
     annoteheaders=["N", "Complications", "Unvaccinated", "Odds Ratio (95% Conf. Int.)"],
     color_alt_rows=True,
     table=True,
-    figsize=(8, 8),
+    figsize=(6, 6),
     # # Additional kwargs for customizations
     **{
         "marker": "D",  # set maker symbol as diamond

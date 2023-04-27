@@ -167,7 +167,7 @@ class CaseData:
                 "BMI": _df.BodyMassIndex_Value,
                 "Weight": _df.Weight_Value,
                 "Height": _df.Height_Value,
-                "AnesthesiaUnits": _df.PrimaryAnesthesiaCPT_MPOGbaseUnits,
+                "AnesUnits": _df.PrimaryAnesthesiaCPT_MPOGbaseUnits,
                 "Mortality30Day": _df.HospitalMortality30Day_Value,
                 "MORT01": _df.MORT01_Result_Reason,
                 "PACU_Duration": pacu_duration,
@@ -179,6 +179,29 @@ class CaseData:
             },
             index=_df.index,
         )
+
+        # Drop Cases with Unknown Race & Simplify Race Data
+        unknown_race = case_df.Race == "Unknown race"
+        case_df = case_df.loc[~unknown_race]
+
+        def simplify_race(text: str) -> str:
+            # Combine Black race.  Only 68 "Hispanic, black" cases.
+            if text in ("Black, not of hispanic origin", "Hispanic, black"):
+                return "Black"
+            elif text in ("White, not of hispanic origin"):
+                return "White"
+            elif text in ("Hispanic, white"):
+                return "Hispanic"
+            else:
+                return text
+
+        case_df = case_df.assign(Race=case_df.Race.apply(simplify_race))
+
+        # Drop Cases with Missing Anesthesia Units
+        case_df = case_df.loc[case_df.AnesUnits.notna()]
+
+        # Drop Cases with Missing BMI
+        case_df = case_df.loc[case_df.BMI.notna()]
 
         # Drop Invalid Anesthesia Case Durations (https://phenotypes.mpog.org/Anesthesia%20Duration)
         case_df = case_df.loc[case_df.AnesDuration > timedelta(minutes=0), :].loc[
